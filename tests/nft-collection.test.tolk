@@ -293,19 +293,31 @@ fun setupTest(): (NftCollection, Treasury, RoyaltyParams) {
         royaltyAddress: randomAddress(),
     };
 
-    // Initialize and deploy the contract with default values
     val nftCollection = NftCollection.fromStorage({
         adminAddress: deployer.address,
         nextItemIndex: 0,
+
+        maxSupply: 12652,
+        revealEnabled: false,
+        baseUri: "https://api.xxx.ir/nft/",
+
         content: CollectionContent {
             collectionMetadata: createEmptyCell(),
             commonContent: "",
         }.toCell(),
-        nftItemCode: build("NftItem"),
+
+        nftItemCode: build("AlamdarItem"),
+
         royaltyParams: royaltyParams.toCell(),
     });
 
-    val deployRes = nftCollection.deploy(deployer.address, { value: ton("0.05"), bounce: false });
+    val deployRes = nftCollection.deploy(
+        deployer.address,
+        {
+            value: ton("0.05"),
+            bounce: false,
+        },
+    );
 
     expect(deployRes).toHaveSuccessfulDeploy({
         to: nftCollection.address,

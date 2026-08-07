@@ -3,10 +3,10 @@ import "fees-management"
 import "messages"
 import "types"
 
-contract NftItem {
-    author: "Acton User"
+contract AlamdarItem {
+    author: "Ali"
     version: "1.0.0"
-    description: "Standard NFT Item. TEP-62 and TEP-64 compliant"
+    description: "Alamdar NFT Item"
     storage: NftItemStorage
     storageAtDeployment: NftItemStorageNotInitialized
     incomingMessages: AllowedMessageToNftItem

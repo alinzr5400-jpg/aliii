@@ -64,6 +64,13 @@ struct (0x05138d91) NotificationForNewOwner {
 struct (0xd53276db) ReturnExcessesBack {
     queryId: uint64
 }
+struct (0x10000001) EnableReveal {
+    queryId: uint64
+}
+
+struct (0x10000002) DisableReveal {
+    queryId: uint64
+}
 
 struct (0x5fcc3d14) AskToChangeOwnership {
     queryId: uint64
@@ -74,3 +81,17 @@ struct (0x5fcc3d14) AskToChangeOwnership {
     @abi.clientType(PayloadInline | PayloadInRef)
     forwardPayload: RemainingBitsAndRefs
 }
+struct (0x10000003) SetBaseUri {
+    baseUri: string
+}
+
+struct (0x10000004) SetMaxSupply {
+    maxSupply: uint64
+}
+
+/// Public sale: anyone can mint `count` NFTs by attaching mintPrice*count + gas.
+struct (0x10000005) PublicMint {
+    queryId: uint64
+    count: uint8
+}
+

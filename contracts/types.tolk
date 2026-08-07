@@ -3,10 +3,12 @@ struct RoyaltyParams {
     denominator: uint16
     royaltyAddress: address
 }
-
 struct NftCollectionStorage {
     adminAddress: address
     nextItemIndex: uint64
+    maxSupply: uint64
+    revealEnabled: bool
+    baseUri: string
     content: Cell<CollectionContent>
     nftItemCode: cell
     royaltyParams: Cell<RoyaltyParams>
@@ -89,6 +91,9 @@ fun calcDeployedNftItem(
 
 struct CollectionDataReply {
     nextItemIndex: int
+    maxSupply: int
+    revealEnabled: bool
+    baseUri: string
     collectionMetadata: cell
     adminAddress: address
 }

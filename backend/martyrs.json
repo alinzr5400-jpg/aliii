@@ -1,0 +1,14 @@
+[
+  {
+    "id": 1,
+    "name": "شهید شماره ۱",
+    "rarity": "Legendary",
+    "image": "https://xxx.ir/images/1.png"
+  },
+  {
+    "id": 2,
+    "name": "شهید شماره ۲",
+    "rarity": "Legendary",
+    "image": "https://xxx.ir/images/2.png"
+  }
+]

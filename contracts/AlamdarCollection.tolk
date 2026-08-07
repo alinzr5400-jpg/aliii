@@ -4,12 +4,18 @@ import "fees-management"
 import "messages"
 import "types"
 
-contract NftCollection {
-    author: "Acton User"
-    version: "1.0.0"
-    description: "Standard NFT Collection. TEP-62 and TEP-64 compliant"
-    storage: NftCollectionStorage
-    incomingMessages: AllowedMessageToNftCollection
+const MAX_SUPPLY: int = 12652;
+const PROJECT_NAME: string = "Alamdar";
+
+contract AlamdarCollection {
+   author: "Ali"
+version: "1.0.0"
+description: "Alamdar NFT Collection"
+
+storage: NftCollectionStorage
+incomingMessages: AllowedMessageToNftCollection
+
+
 }
 
 fun deployNftItem(
@@ -27,11 +33,18 @@ fun deployNftItem(
     deployMsg.send(SEND_MODE_PAY_FEES_SEPARATELY);
 }
 
+fun buildItemContent(itemIndex: int): string {
+    return itemIndex.toDecimalString();
+}
+
 type AllowedMessageToNftCollection =
     | RequestRoyaltyParams
     | DeployNft
     | BatchDeployNfts
     | ChangeCollectionAdmin
+    | EnableReveal
+    | DisableReveal
+    | PublicMint
 
 fun onInternalMessage(in: InMessage) {
     val msg = lazy AllowedMessageToNftCollection.fromSlice(in.body);
@@ -40,10 +53,20 @@ fun onInternalMessage(in: InMessage) {
         DeployNft => {
             var storage = lazy NftCollectionStorage.load();
             assert (in.senderAddress == storage.adminAddress) throw Errors.NotFromAdmin;
+            assert (storage.nextItemIndex < MAX_SUPPLY) throw Errors.InvalidItemIndex;
             assert (msg.itemIndex <= storage.nextItemIndex) throw Errors.InvalidItemIndex;
 
             val isLast = msg.itemIndex == storage.nextItemIndex;
-            deployNftItem(msg.itemIndex, storage.nftItemCode, msg.attachTonAmount, msg.initParams);
+
+            assert (storage.nextItemIndex < MAX_SUPPLY) throw Errors.InvalidItemIndex;
+
+            deployNftItem(
+                msg.itemIndex,
+                storage.nftItemCode,
+                msg.attachTonAmount,
+                msg.initParams,
+            );
+
             if (isLast) {
                 storage.nextItemIndex += 1;
                 storage.save();
@@ -87,6 +110,8 @@ fun onInternalMessage(in: InMessage) {
                     dictItem.attachTonAmount,
                     dictItem.initParams,
                 );
+                assert (storage.nextItemIndex < MAX_SUPPLY) throw Errors.InvalidItemIndex;
+
                 if (itemIndex == storage.nextItemIndex) {
                     storage.nextItemIndex += 1;
                 }
@@ -100,6 +125,51 @@ fun onInternalMessage(in: InMessage) {
             var storage = lazy NftCollectionStorage.load();
             assert (in.senderAddress == storage.adminAddress) throw Errors.NotFromAdmin;
             storage.adminAddress = msg.newAdminAddress;
+            storage.save();
+        }
+
+        EnableReveal => {
+            var storage = lazy NftCollectionStorage.load();
+            assert (in.senderAddress == storage.adminAddress) throw Errors.NotFromAdmin;
+
+            storage.revealEnabled = true;
+            storage.save();
+        }
+
+        DisableReveal => {
+            var storage = lazy NftCollectionStorage.load();
+            assert (in.senderAddress == storage.adminAddress) throw Errors.NotFromAdmin;
+
+            storage.revealEnabled = false;
+            storage.save();
+        }
+
+        PublicMint => {
+            var storage = lazy NftCollectionStorage.load();
+            val count = msg.count;
+
+            assert (count >= 1) throw Errors.InvalidMintCount;
+            assert (count <= PUBLIC_MINT_MAX_COUNT) throw Errors.InvalidMintCount;
+            assert (storage.nextItemIndex + count <= MAX_SUPPLY) throw Errors.SoldOut;
+
+            val required = (MINT_PRICE + PUBLIC_MINT_ITEM_GAS) * count;
+            assert (in.value >= required) throw Errors.InsufficientPayment;
+
+            var i = 0;
+            while (i < count) {
+                val itemIndex = storage.nextItemIndex;
+                deployNftItem(
+                    itemIndex,
+                    storage.nftItemCode,
+                    PUBLIC_MINT_ITEM_GAS,
+                    NftItemInitAtDeployment {
+                        ownerAddress: in.senderAddress,
+                        content: buildItemContent(itemIndex),
+                    }.toCell(),
+                );
+                storage.nextItemIndex += 1;
+                i += 1;
+            }
             storage.save();
         }
 
@@ -120,6 +190,9 @@ get fun get_collection_data(): CollectionDataReply {
 
     return {
         nextItemIndex: storage.nextItemIndex,
+        maxSupply: storage.maxSupply,
+        revealEnabled: storage.revealEnabled,
+        baseUri: storage.baseUri,
         collectionMetadata: content.collectionMetadata,
         adminAddress: storage.adminAddress,
     };
@@ -137,19 +210,42 @@ get fun royalty_params(): RoyaltyParams {
 }
 
 get fun get_nft_content(
-    _itemIndex: int,
-    individualNftContent: string,
+    itemIndex: int,
+    _individualNftContent: string,
 ): Cell<OffchainMetadataReply> {
     val storage = lazy NftCollectionStorage.load();
-    val content = lazy storage.content.load();
-
-    // construct a response from "common content" and "individual content";
-    // for example:
-    // common content = "https://site.org/my-collection/"
-    // individual nft = "my-picture-123.png"  (probably, a long string, snake-encoded)
-    // result         = concatenation
     var b = StringBuilder.create();
-    b.append(content.commonContent);
-    b.append(individualNftContent);
-    return OffchainMetadataReply { string: b.build() }.toCell();
+
+    if (!storage.revealEnabled) {
+        b.append("hidden.json");
+    } else {
+        b.append(itemIndex.toDecimalString());
+        b.append(".json");
+    }
+
+    return OffchainMetadataReply {
+        string: b.build()
+    }.toCell();
+}
+
+get fun get_max_supply(): int {
+    return MAX_SUPPLY;
+}
+
+get fun get_project_name(): string {
+    return PROJECT_NAME;
+}
+
+get fun get_reveal_status(): bool {
+    val storage = lazy NftCollectionStorage.load();
+    return storage.revealEnabled;
+}
+
+get fun get_base_uri(): string {
+    val storage = lazy NftCollectionStorage.load();
+    return storage.baseUri;
+}
+
+get fun get_mint_price(): coins {
+    return MINT_PRICE;
 }

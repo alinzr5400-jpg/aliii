@@ -12,11 +12,11 @@ import "@wrappers/NftItem.gen"
 
 const ONCHAIN_CONTENT_PREFIX = 0x00
 
-const NFT_DEFAULT_COLLECTION_NAME = "SomeNFT"
-const NFT_DEFAULT_COLLECTION_DESCRIPTION = "Some NFT collection"
-const NFT_DEFAULT_COLLECTION_IMAGE = "https://ton.org/download/ton_symbol.svg"
-const NFT_DEFAULT_COMMON_CONTENT = "https://example.com/nft/"
-const NFT_DEFAULT_ITEM_CONTENT = "item-0.json"
+const NFT_DEFAULT_COLLECTION_NAME = "Alamdar"
+const NFT_DEFAULT_COLLECTION_DESCRIPTION = "114 Martyrs Collection"
+const NFT_DEFAULT_COLLECTION_IMAGE = "https://xxx.ir/collection.png"
+const NFT_DEFAULT_COMMON_CONTENT = "https://api.xxx.ir/nft/"
+const NFT_DEFAULT_ITEM_CONTENT = "1"
 const NFT_DEFAULT_BATCH_CONTENT_PREFIX = "batch-"
 const NFT_DEFAULT_BATCH_COUNT = "3"
 
@@ -65,11 +65,17 @@ fun makeNftCollectionStorage(admin: address, info: NftCollectionInfo): NftCollec
     return {
         adminAddress: admin,
         nextItemIndex: 0,
+        maxSupply: 12652,
+        revealEnabled: false,
+        baseUri: "https://api.xxx.ir/nft/",
+
         content: CollectionContent {
             collectionMetadata: buildOnchainMetadata(info),
-            commonContent: NFT_DEFAULT_COMMON_CONTENT,
+            commonContent: "",
         }.toCell(),
-        nftItemCode: build("NftItem"),
+
+        nftItemCode: build("AlamdarItem"),
+
         royaltyParams: RoyaltyParams {
             numerator: 5,
             denominator: 100,
@@ -78,12 +84,25 @@ fun makeNftCollectionStorage(admin: address, info: NftCollectionInfo): NftCollec
     };
 }
 
-fun deployNftCollection(deployer: ActonWallet, info: NftCollectionInfo): NftCollection {
+fun deployNftCollection(
+    deployer: ActonWallet,
+    info: NftCollectionInfo,
+): NftCollection {
+
     val collection = NftCollection.fromStorage(
         makeNftCollectionStorage(deployer.address, info),
     );
-    val res = collection.deploy(deployer.address, { value: ton("0.05"), bounce: false });
+
+    val res = collection.deploy(
+        deployer.address,
+        {
+            value: ton("0.05"),
+            bounce: false,
+        },
+    );
+
     res.waitForFirstTransaction();
+
     return collection;
 }
 
@@ -151,13 +170,20 @@ fun deployNftBatch(
 fun printNftCollectionInfo(collection: NftCollection, label: string) {
     val data = collection.getCollectionData();
     val royalty = collection.royaltyParams();
+
     println("{} COLLECTION_ADDRESS={}", label, collection.address);
     println("{} ADMIN_ADDRESS={}", label, data.adminAddress);
     println("{} NEXT_ITEM_INDEX={}", label, data.nextItemIndex);
+
+    println("{} MAX_SUPPLY={}", label, data.maxSupply);
+    println("{} REVEAL={}", label, data.revealEnabled);
+    println("{} BASE_URI={}", label, data.baseUri);
+
     println("{} COLLECTION_METADATA_HASH={}", label, data.collectionMetadata.hash());
     println("{} ROYALTY_ADDRESS={}", label, royalty.royaltyAddress);
     println("{} ROYALTY_NUMERATOR={}", label, royalty.numerator);
     println("{} ROYALTY_DENOMINATOR={}", label, royalty.denominator);
+
     println(
         "{} NFT_CONTENT_HASH={}",
         label,

@@ -17,6 +17,16 @@ display-name = "NftItem"
 src = "contracts/NftItem.tolk"
 depends = []
 
+[contracts.AlamdarCollection]
+display-name = "AlamdarCollection"
+src = "contracts/AlamdarCollection.tolk"
+depends = []
+
+[contracts.AlamdarItem]
+display-name = "AlamdarItem"
+src = "contracts/AlamdarItem.tolk"
+depends = []
+
 [test]
 
 [fmt]
@@ -30,6 +40,8 @@ nft-change-admin = "acton script scripts/change-admin.tolk"
 nft-deploy-batch = "acton script scripts/deploy-batch.tolk"
 nft-deploy-item = "acton script scripts/deploy-item.tolk"
 nft-transfer-item = "acton script scripts/transfer-item.tolk"
+nft-enable-reveal = "acton script scripts/enable-reveal.tolk"
+nft-disable-reveal = "acton script scripts/disable-reveal.tolk"
 
 [import-mappings]
 acton = ".acton"

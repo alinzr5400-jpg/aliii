@@ -9,4 +9,7 @@ enum Errors {
     InvalidItemIndex = 402
     TooSmallRestAmount = 402
     IncorrectForwardPayload = 708
+    InsufficientPayment = 410
+    InvalidMintCount = 411
+    SoldOut = 412
 }

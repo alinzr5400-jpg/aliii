@@ -119,10 +119,13 @@ get fun get_collection_data(): CollectionDataReply {
     val content = lazy storage.content.load();
 
     return {
-        nextItemIndex: storage.nextItemIndex,
-        collectionMetadata: content.collectionMetadata,
-        adminAddress: storage.adminAddress,
-    };
+    nextItemIndex: storage.nextItemIndex,
+    maxSupply: storage.maxSupply,
+    revealEnabled: storage.revealEnabled,
+    baseUri: storage.baseUri,
+    collectionMetadata: content.collectionMetadata,
+    adminAddress: storage.adminAddress,
+};
 }
 
 get fun get_nft_address_by_index(itemIndex: int): address {

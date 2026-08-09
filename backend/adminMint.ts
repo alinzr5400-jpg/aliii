@@ -1,6 +1,11 @@
-import { Address, Dictionary, toNano, type Sender } from "@ton/core";
 import { mnemonicToPrivateKey } from "@ton/crypto";
 import { WalletContractV4, WalletContractV5R1 } from "@ton/ton";
+import {
+  Address,
+  Dictionary,
+  toNano,
+  type Sender,
+} from "../lib/tonCore";
 import {
   AlamdarCollection,
   BatchDeployDictItem,

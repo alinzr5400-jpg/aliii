@@ -1,7 +1,8 @@
 {
   "scripts": {
     "backend": "tsx backend/server.ts",
-    "backend:dev": "tsx watch backend/server.ts"
+    "backend:dev": "tsx watch backend/server.ts",
+    "start": "tsx backend/server.ts"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
@@ -12,7 +13,9 @@
     "@ton/core": "^0.63.1",
     "@ton/crypto": "^3.3.0",
     "@ton/ton": "^16.3.0",
+    "better-sqlite3": "^13.0.2",
     "cors": "^2.8.6",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
   }
 }

@@ -1,4 +1,8 @@
-import { beginCell, toNano, Address } from "@ton/core";
+import {
+  Address,
+  beginCell,
+  toNano,
+} from "../lib/tonCore";
 
 /** Opcode for PublicMint on AlamdarCollection */
 export const PUBLIC_MINT_OP = 0x10000005;

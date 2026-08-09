@@ -1,5 +1,11 @@
 import { mnemonicToPrivateKey } from "@ton/crypto";
-import { WalletContractV4, WalletContractV5R1 } from "@ton/ton";
+import {
+  Address as TonAddress,
+  Cell,
+  SendMode,
+  WalletContractV4,
+  WalletContractV5R1,
+} from "@ton/ton";
 import {
   Address,
   Dictionary,
@@ -32,6 +38,21 @@ function createAdminWallet(publicKey: Buffer) {
   return WalletContractV5R1.create({ publicKey });
 }
 
+/**
+ * Re-hydrate Cell/Address through @ton/ton so WalletContract sender
+ * (CJS @ton/core) accepts them. Wrappers/tsx can load ESM @ton/core;
+ * instanceof checks fail across the two copies without this bridge.
+ */
+function forWalletCell(cell: { toBoc: () => Buffer }): Cell {
+  return Cell.fromBoc(cell.toBoc())[0];
+}
+
+function forWalletAddress(address: Address | string): TonAddress {
+  return TonAddress.parse(
+    typeof address === "string" ? address : address.toString()
+  );
+}
+
 export async function openAdminSender(): Promise<{
   sender: Sender;
   address: Address;
@@ -50,8 +71,9 @@ export async function adminMintToBuyer(
   count: number
 ): Promise<number[]> {
   const { sender } = await openAdminSender();
+  const collectionAddr = getCollectionAddress();
   const collection = client.open(
-    AlamdarCollection.fromAddress(getCollectionAddress())
+    AlamdarCollection.fromAddress(collectionAddr)
   );
 
   const data = await collection.getCollectionData();
@@ -97,9 +119,16 @@ export async function adminMintToBuyer(
   }
 
   const msgValue = toNano("0.03") * BigInt(count) + toNano("0.1");
-  await collection.sendBatchDeployNfts(sender, msgValue, {
+  const bodyEsm = AlamdarCollection.createCellOfBatchDeployNfts({
     queryId: BigInt(Date.now()),
     deployList: dict,
+  });
+
+  await sender.send({
+    to: forWalletAddress(collectionAddr),
+    value: msgValue,
+    body: forWalletCell(bodyEsm),
+    sendMode: SendMode.PAY_GAS_SEPARATELY,
   });
 
   return indices;

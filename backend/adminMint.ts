@@ -17,6 +17,7 @@ import {
   BatchDeployDictItem,
   NftItemInitAtDeployment,
 } from "../wrappers-ts/AlamdarCollection.gen";
+import { clearCollectionCache } from "./collection";
 import { client, getCollectionAddress } from "./ton";
 
 function requireMnemonic(): string[] {
@@ -131,5 +132,6 @@ export async function adminMintToBuyer(
     sendMode: SendMode.PAY_GAS_SEPARATELY,
   });
 
+  clearCollectionCache();
   return indices;
 }

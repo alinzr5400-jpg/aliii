@@ -18,6 +18,7 @@ import {
   updateOrderStatus,
 } from "./orders";
 import { adminMintToBuyer } from "./adminMint";
+import { isRateLimitError } from "./ton";
 
 // Keep the existing SQLite file for now.
 const db = require("./database");
@@ -339,6 +340,12 @@ app.post("/mint/confirm", async (req, res) => {
     const orderId = String(req.body?.orderId ?? "").trim();
     if (orderId) {
       updateOrderStatus(db, orderId, "failed");
+    }
+    if (isRateLimitError(error)) {
+      return res.status(429).json({
+        error:
+          "Toncenter rate limit (429). Wait ~1 minute, set TON_API_KEY on Render, then retry confirm.",
+      });
     }
     return res.status(500).json({
       error: error instanceof Error ? error.message : "Mint confirm failed",

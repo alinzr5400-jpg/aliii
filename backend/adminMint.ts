@@ -20,6 +20,10 @@ import {
 import { clearCollectionCache } from "./collection";
 import { client, getCollectionAddress } from "./ton";
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function requireMnemonic(): string[] {
   const raw = process.env.ADMIN_MNEMONIC?.trim();
   if (!raw) {
@@ -54,6 +58,30 @@ function forWalletAddress(address: Address | string): TonAddress {
   );
 }
 
+async function waitForNextItemIndex(
+  collection: {
+    getCollectionData: () => Promise<{ nextItemIndex: bigint | number }>;
+  },
+  minExpected: number
+): Promise<number> {
+  const attempts = Number(process.env.MINT_CONFIRM_ATTEMPTS ?? 20);
+  const delayMs = Number(process.env.MINT_CONFIRM_DELAY_MS ?? 3000);
+
+  for (let i = 0; i < attempts; i++) {
+    await sleep(delayMs);
+    clearCollectionCache();
+    const data = await collection.getCollectionData();
+    const next = Number(data.nextItemIndex);
+    if (next >= minExpected) {
+      return next;
+    }
+  }
+
+  throw new Error(
+    `Mint was sent but on-chain nextItemIndex did not reach ${minExpected}. Check admin wallet Testnet balance, ADMIN_WALLET_VERSION, and that ADMIN_MNEMONIC matches collection admin.`
+  );
+}
+
 export async function openAdminSender(): Promise<{
   sender: Sender;
   address: Address;
@@ -71,7 +99,7 @@ export async function adminMintToBuyer(
   buyerAddress: string,
   count: number
 ): Promise<number[]> {
-  const { sender } = await openAdminSender();
+  const { sender, address: adminWalletAddress } = await openAdminSender();
   const collectionAddr = getCollectionAddress();
   const collection = client.open(
     AlamdarCollection.fromAddress(collectionAddr)
@@ -80,6 +108,17 @@ export async function adminMintToBuyer(
   const data = await collection.getCollectionData();
   const startIndex = Number(data.nextItemIndex);
   const maxSupply = Number(data.maxSupply);
+  const onChainAdmin = data.adminAddress;
+
+  if (
+    !TonAddress.parse(adminWalletAddress.toString()).equals(
+      TonAddress.parse(onChainAdmin.toString())
+    )
+  ) {
+    throw new Error(
+      `ADMIN_MNEMONIC wallet (${adminWalletAddress.toString()}) does not match on-chain collection admin (${onChainAdmin.toString()}). Mint would not update supply.`
+    );
+  }
 
   if (startIndex + count > maxSupply) {
     throw new Error("Not enough supply remaining");
@@ -132,6 +171,7 @@ export async function adminMintToBuyer(
     sendMode: SendMode.PAY_GAS_SEPARATELY,
   });
 
+  await waitForNextItemIndex(collection, startIndex + count);
   clearCollectionCache();
   return indices;
 }

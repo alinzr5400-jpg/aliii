@@ -19,6 +19,7 @@ import {
 } from "./orders";
 import { adminMintToBuyer } from "./adminMint";
 import { isRateLimitError } from "./ton";
+import { getHiddenImageUrl } from "./media";
 
 // Keep the existing SQLite file for now.
 const db = require("./database");
@@ -99,8 +100,7 @@ app.get("/nft/:id", async (req, res) => {
 
   try {
     const state = await readCollectionState();
-    const hiddenImage =
-      process.env.HIDDEN_IMAGE_URL ?? "https://xxx.ir/hidden.png";
+    const hiddenImage = getHiddenImageUrl();
 
     if (!state.revealEnabled) {
       return res.json({
@@ -136,8 +136,7 @@ app.get("/gallery", async (req, res) => {
   const limit = Math.min(Number(req.query.limit ?? 6), 24);
   try {
     const state = await readCollectionState();
-    const hiddenImage =
-      process.env.HIDDEN_IMAGE_URL ?? "https://xxx.ir/hidden.png";
+    const hiddenImage = getHiddenImageUrl();
 
     if (!state.revealEnabled) {
       const cards = Array.from({ length: limit }, (_, i) => ({

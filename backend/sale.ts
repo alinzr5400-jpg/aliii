@@ -1,4 +1,5 @@
 import { readCollectionState } from "./collection";
+import { getHiddenImageUrl } from "./media";
 
 export type SaleConfig = {
   project: string;
@@ -42,8 +43,7 @@ export function getStaticSaleSettings() {
     saleStartsAt,
     saleMode: parseSaleMode(),
     network: process.env.NETWORK ?? "testnet",
-    hiddenImage:
-      process.env.HIDDEN_IMAGE_URL ?? "https://xxx.ir/hidden.png",
+    hiddenImage: getHiddenImageUrl(),
   };
 }
 

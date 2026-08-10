@@ -19,12 +19,20 @@ import {
 } from "./orders";
 import { adminMintToBuyer } from "./adminMint";
 import { isRateLimitError } from "./ton";
-import { getHiddenImageUrl } from "./media";
+import { getHiddenImageUrl, LEGENDARY_FILES } from "./media";
+import {
+  assignCardsForTokens,
+  ensureAssignmentTables,
+  getAssignment,
+  seedLegendaryInventory,
+} from "./assignments";
 
 // Keep the existing SQLite file for now.
 const db = require("./database");
 
 ensureOrdersTable(db);
+ensureAssignmentTables(db);
+seedLegendaryInventory(db);
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3000);
@@ -40,7 +48,14 @@ function getNftRow(id: number) {
 }
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, project: "Alamdar" });
+  res.json({
+    ok: true,
+    project: "Alamdar",
+    media: {
+      hiddenConfigured: true,
+      legendaryCards: LEGENDARY_FILES.length,
+    },
+  });
 });
 
 app.get("/collection", async (_req, res) => {
@@ -111,6 +126,20 @@ app.get("/nft/:id", async (req, res) => {
       });
     }
 
+    const assigned = getAssignment(db, id);
+    if (assigned) {
+      return res.json({
+        name: assigned.name,
+        description: "Alamdar NFT Collection",
+        image: assigned.image,
+        attributes: [
+          { trait_type: "Rarity", value: assigned.rarity },
+          { trait_type: "Token ID", value: id },
+          { trait_type: "Card", value: assigned.cardKey },
+        ],
+      });
+    }
+
     const nft = getNftRow(id);
     if (!nft) {
       return res.status(404).json({ error: "NFT metadata not found" });
@@ -118,7 +147,7 @@ app.get("/nft/:id", async (req, res) => {
 
     return res.json({
       name: nft.name,
-      description: "114 Martyrs Collection",
+      description: "Alamdar NFT Collection",
       image: nft.image,
       attributes: [
         { trait_type: "Rarity", value: nft.rarity },
@@ -325,6 +354,7 @@ app.post("/mint/confirm", async (req, res) => {
     updateOrderStatus(db, orderId, "minting", { txHash: boc ?? undefined });
 
     const mintIndices = await adminMintToBuyer(order.buyer, order.count);
+    const assignments = assignCardsForTokens(db, mintIndices);
     updateOrderStatus(db, orderId, "minted", { mintIndices });
 
     return res.json({
@@ -334,6 +364,12 @@ app.post("/mint/confirm", async (req, res) => {
       mode: "admin",
       mintIndices,
       count: order.count,
+      // Card identities are assigned now; images stay hidden until revealEnabled
+      assignments: assignments.map((a) => ({
+        tokenId: a.tokenId,
+        rarity: a.rarity,
+        cardKey: a.cardKey,
+      })),
     });
   } catch (error) {
     const orderId = String(req.body?.orderId ?? "").trim();

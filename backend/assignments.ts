@@ -108,6 +108,31 @@ export function getAssignment(
   };
 }
 
+export function listAssignments(db: Db, limit = 24): CardAssignment[] {
+  const rows = db
+    .prepare(
+      `SELECT token_id, card_key, name, rarity, image
+       FROM card_assignments
+       ORDER BY token_id ASC
+       LIMIT ?`
+    )
+    .all(limit) as Array<{
+    token_id: number;
+    card_key: string;
+    name: string;
+    rarity: string;
+    image: string;
+  }>;
+
+  return rows.map((row) => ({
+    tokenId: row.token_id,
+    cardKey: row.card_key,
+    name: row.name,
+    rarity: row.rarity,
+    image: row.image,
+  }));
+}
+
 /**
  * Random reveal assignment for minted on-chain token ids.
  * Picks unused inventory cards without replacement when possible.

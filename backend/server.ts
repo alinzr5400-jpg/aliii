@@ -24,8 +24,10 @@ import {
   assignCardsForTokens,
   ensureAssignmentTables,
   getAssignment,
+  listAssignments,
   seedLegendaryInventory,
 } from "./assignments";
+import { setRevealEnabled } from "./reveal";
 
 // Keep the existing SQLite file for now.
 const db = require("./database");
@@ -107,7 +109,8 @@ app.get("/config", async (_req, res) => {
 });
 
 app.get("/nft/:id", async (req, res) => {
-  const id = Number(req.params.id);
+  const rawId = String(req.params.id ?? "").replace(/\.json$/i, "");
+  const id = Number(rawId);
 
   if (!Number.isInteger(id) || id < 0 || id >= 12652) {
     return res.status(404).json({ error: "NFT not found" });
@@ -176,6 +179,20 @@ app.get("/gallery", async (req, res) => {
         image: hiddenImage,
       }));
       return res.json({ reveal: false, items: cards });
+    }
+
+    const assigned = listAssignments(db, limit);
+    if (assigned.length > 0) {
+      return res.json({
+        reveal: true,
+        items: assigned.map((row) => ({
+          id: row.tokenId,
+          name: row.name,
+          role: row.rarity,
+          rarity: row.rarity,
+          image: row.image,
+        })),
+      });
     }
 
     const rows = db
@@ -403,6 +420,46 @@ app.get("/mint/order/:id", (req, res) => {
     mintIndices: order.mint_indices ? JSON.parse(order.mint_indices) : null,
     createdAt: order.created_at,
   });
+});
+
+function requireAdminSecret(req: express.Request, res: express.Response): boolean {
+  const secret = process.env.ADMIN_API_SECRET?.trim();
+  if (!secret) {
+    res.status(503).json({
+      error: "ADMIN_API_SECRET is not configured on the backend",
+    });
+    return false;
+  }
+  const provided =
+    String(req.header("x-admin-secret") ?? "") ||
+    String(req.body?.secret ?? "");
+  if (provided !== secret) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * On-chain reveal toggle (admin only).
+ * Header: x-admin-secret: <ADMIN_API_SECRET>
+ * Body: { "enabled": true | false }
+ */
+app.post("/admin/reveal", async (req, res) => {
+  if (!requireAdminSecret(req, res)) return;
+
+  const enabled = Boolean(req.body?.enabled);
+  try {
+    const state = await setRevealEnabled(enabled);
+    return res.json({
+      success: true,
+      revealEnabled: state.revealEnabled,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : "Reveal update failed",
+    });
+  }
 });
 
 app.listen(PORT, () => {

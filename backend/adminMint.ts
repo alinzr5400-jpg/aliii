@@ -48,11 +48,11 @@ function createAdminWallet(publicKey: Buffer) {
  * (CJS @ton/core) accepts them. Wrappers/tsx can load ESM @ton/core;
  * instanceof checks fail across the two copies without this bridge.
  */
-function forWalletCell(cell: { toBoc: () => Buffer }): Cell {
+export function forWalletCell(cell: { toBoc: () => Buffer }): Cell {
   return Cell.fromBoc(cell.toBoc())[0];
 }
 
-function forWalletAddress(address: Address | string): TonAddress {
+export function forWalletAddress(address: Address | string): TonAddress {
   return TonAddress.parse(
     typeof address === "string" ? address : address.toString()
   );

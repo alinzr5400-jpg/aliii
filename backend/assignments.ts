@@ -348,3 +348,16 @@ export function assignCardsForTokens(
 
   return results;
 }
+
+/**
+ * Backfill random card assignments for on-chain minted token ids
+ * that are missing from SQLite (e.g. after Render ephemeral disk wipe).
+ */
+export function ensureMintedAssignments(
+  db: Db,
+  mintedCount: number
+): CardAssignment[] {
+  if (!Number.isFinite(mintedCount) || mintedCount <= 0) return [];
+  const ids = Array.from({ length: Math.floor(mintedCount) }, (_, i) => i);
+  return assignCardsForTokens(db, ids);
+}

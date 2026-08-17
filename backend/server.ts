@@ -23,6 +23,7 @@ import { getHiddenImageUrl, LEGENDARY_FILES, MYTHIC_FILES, UNIQUE_FILES } from "
 import {
   assignCardsForTokens,
   ensureAssignmentTables,
+  ensureMintedAssignments,
   getAssignment,
   listAssignments,
   seedCardInventory,
@@ -133,6 +134,11 @@ app.get("/nft/:id", async (req, res) => {
       });
     }
 
+    // Recover assignments if SQLite was wiped (Render ephemeral disk).
+    if (id < Number(state.nextItemIndex)) {
+      ensureMintedAssignments(db, Number(state.nextItemIndex));
+    }
+
     const assigned = getAssignment(db, id);
     if (assigned) {
       return res.json({
@@ -185,6 +191,9 @@ app.get("/gallery", async (req, res) => {
       return res.json({ reveal: false, items: cards });
     }
 
+    // Recover assignments if SQLite was wiped after redeploy/restart.
+    ensureMintedAssignments(db, Number(state.nextItemIndex));
+
     const assigned = listAssignments(db, limit);
     if (assigned.length > 0) {
       return res.json({
@@ -199,27 +208,7 @@ app.get("/gallery", async (req, res) => {
       });
     }
 
-    const rows = db
-      .prepare(
-        "SELECT id, name, rarity, image FROM martyrs ORDER BY id ASC LIMIT ?"
-      )
-      .all(limit) as Array<{
-      id: number;
-      name: string;
-      rarity: string;
-      image: string;
-    }>;
-
-    return res.json({
-      reveal: true,
-      items: rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        role: row.rarity,
-        rarity: row.rarity,
-        image: row.image,
-      })),
-    });
+    return res.json({ reveal: true, items: [] });
   } catch (error) {
     return res.status(500).json({
       error: error instanceof Error ? error.message : "Failed to load gallery",

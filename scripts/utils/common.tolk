@@ -65,7 +65,7 @@ fun makeNftCollectionStorage(admin: address, info: NftCollectionInfo): NftCollec
     return {
         adminAddress: admin,
         nextItemIndex: 0,
-        maxSupply: 12652,
+        maxSupply: 16120,
         revealEnabled: false,
         baseUri: "https://api.xxx.ir/nft/",
 

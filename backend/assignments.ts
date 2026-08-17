@@ -1,10 +1,8 @@
-import { randomInt } from "node:crypto";
 import {
-  getLegendaryImageUrl,
-  LEGENDARY_FILES,
-} from "./media";
-import fs from "node:fs";
-import path from "node:path";
+  assertCatalogTotals,
+  buildCardCatalog,
+  TOTAL_SUPPLY,
+} from "./cardCatalog";
 
 type Db = {
   prepare: (sql: string) => {
@@ -31,11 +29,6 @@ type InventoryRow = {
   assigned_token_id: number | null;
 };
 
-function loadLegendaryMeta(): Array<{ id: number; name: string; file: string }> {
-  const file = path.join(__dirname, "legendary-cards.json");
-  return JSON.parse(fs.readFileSync(file, "utf8"));
-}
-
 export function ensureAssignmentTables(db: Db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS card_inventory (
@@ -57,26 +50,67 @@ export function ensureAssignmentTables(db: Db) {
   `);
 }
 
-/** Idempotent: add Legendary cards into the pool (Rare/Common later). */
-export function seedLegendaryInventory(db: Db) {
+/**
+ * Seed full 16,120 inventory slots (one row per copy).
+ * Idempotent when count already matches TOTAL_SUPPLY.
+ * Preserves existing token assignments by re-marking matching free slots.
+ */
+export function seedCardInventory(db: Db) {
   ensureAssignmentTables(db);
-  const meta = loadLegendaryMeta();
-  const byFile = new Map(meta.map((m) => [m.file, m]));
+  const cards = buildCardCatalog();
+  const totals = assertCatalogTotals(cards);
+
+  const countRow = db
+    .prepare("SELECT COUNT(*) AS c FROM card_inventory")
+    .get() as { c: number };
+  if (countRow.c === TOTAL_SUPPLY) {
+    return totals;
+  }
+
+  const existingAssignments = db
+    .prepare(
+      `SELECT token_id, name, rarity, image FROM card_assignments`
+    )
+    .all() as Array<{
+    token_id: number;
+    name: string;
+    rarity: string;
+    image: string;
+  }>;
+
+  db.exec("DELETE FROM card_inventory");
+
   const insert = db.prepare(`
-    INSERT OR IGNORE INTO card_inventory(card_key, name, rarity, image, assigned_token_id)
+    INSERT INTO card_inventory(card_key, name, rarity, image, assigned_token_id)
     VALUES (?, ?, ?, ?, NULL)
   `);
 
-  for (const file of LEGENDARY_FILES) {
-    const card = byFile.get(file);
-    const key = `legendary:${file}`;
-    insert.run(
-      key,
-      card?.name ?? `علمدار Legendary (${file})`,
-      "Legendary",
-      getLegendaryImageUrl(file)
-    );
+  for (const card of cards) {
+    for (let i = 0; i < card.copies; i++) {
+      const key = `${card.rarity.toLowerCase()}:${card.stem}#${i}`;
+      insert.run(key, card.name, card.rarity, card.image);
+    }
   }
+
+  const mark = db.prepare(
+    `UPDATE card_inventory
+     SET assigned_token_id = ?
+     WHERE card_key = (
+       SELECT card_key FROM card_inventory
+       WHERE assigned_token_id IS NULL AND image = ?
+       LIMIT 1
+     )`
+  );
+  for (const row of existingAssignments) {
+    mark.run(row.token_id, row.image);
+  }
+
+  return totals;
+}
+
+/** @deprecated use seedCardInventory */
+export function seedLegendaryInventory(db: Db) {
+  return seedCardInventory(db);
 }
 
 export function getAssignment(
@@ -135,14 +169,14 @@ export function listAssignments(db: Db, limit = 24): CardAssignment[] {
 
 /**
  * Random reveal assignment for minted on-chain token ids.
- * Picks unused inventory cards without replacement when possible.
+ * Picks unused inventory slots without replacement.
  */
 export function assignCardsForTokens(
   db: Db,
   tokenIds: number[]
 ): CardAssignment[] {
   ensureAssignmentTables(db);
-  seedLegendaryInventory(db);
+  seedCardInventory(db);
 
   const results: CardAssignment[] = [];
   const now = Math.floor(Date.now() / 1000);
@@ -150,13 +184,12 @@ export function assignCardsForTokens(
   const getExisting = db.prepare(
     `SELECT token_id, card_key, name, rarity, image FROM card_assignments WHERE token_id = ?`
   );
-  const availableStmt = db.prepare(
+  const pickStmt = db.prepare(
     `SELECT card_key, name, rarity, image, assigned_token_id
      FROM card_inventory
-     WHERE assigned_token_id IS NULL`
-  );
-  const anyStmt = db.prepare(
-    `SELECT card_key, name, rarity, image, assigned_token_id FROM card_inventory`
+     WHERE assigned_token_id IS NULL
+     ORDER BY RANDOM()
+     LIMIT 1`
   );
   const markInventory = db.prepare(
     `UPDATE card_inventory SET assigned_token_id = ? WHERE card_key = ?`
@@ -188,17 +221,11 @@ export function assignCardsForTokens(
       continue;
     }
 
-    let pool = availableStmt.all() as InventoryRow[];
-    // If Legendary pool is exhausted, allow reuse from full inventory
-    // until Rare/Common folders are added.
-    if (pool.length === 0) {
-      pool = anyStmt.all() as InventoryRow[];
-    }
-    if (pool.length === 0) {
-      throw new Error("Card inventory is empty");
+    const pick = pickStmt.get() as InventoryRow | undefined;
+    if (!pick) {
+      throw new Error("Card inventory exhausted (all 16120 slots assigned)");
     }
 
-    const pick = pool[randomInt(pool.length)];
     markInventory.run(tokenId, pick.card_key);
     insertAssignment.run(
       tokenId,

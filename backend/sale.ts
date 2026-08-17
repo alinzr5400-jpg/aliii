@@ -1,5 +1,6 @@
 import { readCollectionState } from "./collection";
 import { getHiddenImageUrl } from "./media";
+import { TOTAL_SUPPLY } from "./cardCatalog";
 
 export type SaleConfig = {
   project: string;
@@ -56,7 +57,7 @@ export async function buildSaleConfig(): Promise<SaleConfig> {
 
   try {
     const state = await readCollectionState();
-    const totalSupply = Number(state.maxSupply) || 12652;
+    const totalSupply = Number(state.maxSupply) || TOTAL_SUPPLY;
     const minted = Number(state.nextItemIndex) || 0;
     const paymentAddress =
       process.env.PAYMENT_ADDRESS?.trim() ||
@@ -85,7 +86,7 @@ export async function buildSaleConfig(): Promise<SaleConfig> {
       hiddenImage: staticSettings.hiddenImage,
     };
   } catch {
-    const totalSupply = 12652;
+    const totalSupply = TOTAL_SUPPLY;
     return {
       project: "Alamdar",
       network: staticSettings.network,

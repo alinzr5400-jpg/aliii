@@ -4,7 +4,7 @@ import "fees-management"
 import "messages"
 import "types"
 
-const MAX_SUPPLY: int = 12652;
+const MAX_SUPPLY: int = 16120;
 const PROJECT_NAME: string = "Alamdar";
 
 contract AlamdarCollection {

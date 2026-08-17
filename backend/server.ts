@@ -19,14 +19,15 @@ import {
 } from "./orders";
 import { adminMintToBuyer } from "./adminMint";
 import { isRateLimitError } from "./ton";
-import { getHiddenImageUrl, LEGENDARY_FILES } from "./media";
+import { getHiddenImageUrl, LEGENDARY_FILES, MYTHIC_FILES, UNIQUE_FILES } from "./media";
 import {
   assignCardsForTokens,
   ensureAssignmentTables,
   getAssignment,
   listAssignments,
-  seedLegendaryInventory,
+  seedCardInventory,
 } from "./assignments";
+import { TOTAL_SUPPLY } from "./cardCatalog";
 import { setRevealEnabled } from "./reveal";
 
 // Keep the existing SQLite file for now.
@@ -34,7 +35,7 @@ const db = require("./database");
 
 ensureOrdersTable(db);
 ensureAssignmentTables(db);
-seedLegendaryInventory(db);
+seedCardInventory(db);
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3000);
@@ -56,6 +57,9 @@ app.get("/health", (_req, res) => {
     media: {
       hiddenConfigured: true,
       legendaryCards: LEGENDARY_FILES.length,
+      mythicCards: MYTHIC_FILES.length,
+      uniqueCards: UNIQUE_FILES.length,
+      totalSupply: TOTAL_SUPPLY,
     },
   });
 });
@@ -112,7 +116,7 @@ app.get("/nft/:id", async (req, res) => {
   const rawId = String(req.params.id ?? "").replace(/\.json$/i, "");
   const id = Number(rawId);
 
-  if (!Number.isInteger(id) || id < 0 || id >= 12652) {
+  if (!Number.isInteger(id) || id < 0 || id >= TOTAL_SUPPLY) {
     return res.status(404).json({ error: "NFT not found" });
   }
 

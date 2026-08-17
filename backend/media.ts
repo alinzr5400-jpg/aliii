@@ -16,11 +16,24 @@ export const LEGENDARY_FOLDER_CID =
   process.env.IPFS_LEGENDARY_CID?.trim() ||
   "bafybeid5gyufb36n5iq7jfuylrqpvxefmej24kyzzvrhp7fmpkxdxsqnrq";
 
-/** Placeholders until user uploads the other rarity folders on Pinata */
-export const RARE_FOLDER_CID = process.env.IPFS_RARE_CID?.trim() || "";
-export const COMMON_FOLDER_CID = process.env.IPFS_COMMON_CID?.trim() || "";
+/** Folder CID for NFT_Mythic (100 jpgs: 11-1.jpg … 60-2.jpg) */
+export const MYTHIC_FOLDER_CID =
+  process.env.IPFS_MYTHIC_CID?.trim() ||
+  "bafybeiera5opfkep6tyqqfktdq7ez33cgxnyesg6splmf7jwne2i5al3uu";
 
-/** Filenames discovered in the Legendary Pinata folder */
+/** Folder CID for NFT_Unique (108 jpgs: 61-1.jpg … 114-2.jpg) */
+export const UNIQUE_FOLDER_CID =
+  process.env.IPFS_UNIQUE_CID?.trim() ||
+  "bafybeic63nnkc2gzhh3ylui66uivoroxja572zhrraavmkcjpkc74cck4a";
+
+/** @deprecated use MYTHIC_FOLDER_CID */
+export const RARE_FOLDER_CID =
+  process.env.IPFS_RARE_CID?.trim() || MYTHIC_FOLDER_CID;
+/** @deprecated use UNIQUE_FOLDER_CID */
+export const COMMON_FOLDER_CID =
+  process.env.IPFS_COMMON_CID?.trim() || UNIQUE_FOLDER_CID;
+
+/** Filenames in the Legendary Pinata folder */
 export const LEGENDARY_FILES = [
   "0-1.jpg",
   "0-2.jpg",
@@ -65,6 +78,24 @@ export const LEGENDARY_FILES = [
   "10-3.jpg",
 ] as const;
 
+/** Mythic: 11-1 … 60-2 (each major has -1 and -2) */
+export const MYTHIC_FILES: string[] = (() => {
+  const files: string[] = [];
+  for (let major = 11; major <= 60; major++) {
+    files.push(`${major}-1.jpg`, `${major}-2.jpg`);
+  }
+  return files;
+})();
+
+/** Unique: 61-1 … 114-2 (each major has -1 and -2) */
+export const UNIQUE_FILES: string[] = (() => {
+  const files: string[] = [];
+  for (let major = 61; major <= 114; major++) {
+    files.push(`${major}-1.jpg`, `${major}-2.jpg`);
+  }
+  return files;
+})();
+
 export function ipfsUrl(cid: string, path?: string): string {
   const base = `${DEFAULT_GATEWAY}/${cid}`;
   if (!path) return base;
@@ -82,10 +113,18 @@ export function getLegendaryImageUrl(filename: string): string {
   return ipfsUrl(LEGENDARY_FOLDER_CID, filename);
 }
 
-export type RarityTier = "Legendary" | "Rare" | "Common";
+export function getMythicImageUrl(filename: string): string {
+  return ipfsUrl(MYTHIC_FOLDER_CID, filename);
+}
+
+export function getUniqueImageUrl(filename: string): string {
+  return ipfsUrl(UNIQUE_FOLDER_CID, filename);
+}
+
+export type RarityTier = "Legendary" | "Mythic" | "Unique";
 
 export function getRarityFolderCid(rarity: RarityTier): string {
   if (rarity === "Legendary") return LEGENDARY_FOLDER_CID;
-  if (rarity === "Rare") return RARE_FOLDER_CID;
-  return COMMON_FOLDER_CID;
+  if (rarity === "Mythic") return MYTHIC_FOLDER_CID;
+  return UNIQUE_FOLDER_CID;
 }

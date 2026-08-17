@@ -2,7 +2,13 @@ import {
   assertCatalogTotals,
   buildCardCatalog,
   TOTAL_SUPPLY,
+  type CatalogCard,
 } from "./cardCatalog";
+import {
+  LEGENDARY_FOLDER_CID,
+  MYTHIC_FOLDER_CID,
+  UNIQUE_FOLDER_CID,
+} from "./media";
 
 type Db = {
   prepare: (sql: string) => {
@@ -29,6 +35,29 @@ type InventoryRow = {
   assigned_token_id: number | null;
 };
 
+function catalogFingerprint(): string {
+  return [
+    TOTAL_SUPPLY,
+    LEGENDARY_FOLDER_CID,
+    MYTHIC_FOLDER_CID,
+    UNIQUE_FOLDER_CID,
+  ].join("|");
+}
+
+function stemFromCardKey(cardKey: string): string | null {
+  // mythic:32-1#0  OR legacy legendary:0-1.jpg
+  const body = cardKey.includes(":") ? cardKey.split(":")[1] : cardKey;
+  if (!body) return null;
+  return body.replace(/\.jpg$/i, "").split("#")[0] || null;
+}
+
+function cardByStem(
+  cards: CatalogCard[],
+  stem: string
+): CatalogCard | undefined {
+  return cards.find((c) => c.stem === stem);
+}
+
 export function ensureAssignmentTables(db: Db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS card_inventory (
@@ -47,32 +76,66 @@ export function ensureAssignmentTables(db: Db) {
       image TEXT NOT NULL,
       assigned_at INTEGER NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS app_meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
+}
+
+function refreshAssignmentImages(db: Db, cards: CatalogCard[]) {
+  const rows = db
+    .prepare(`SELECT token_id, card_key, image FROM card_assignments`)
+    .all() as Array<{ token_id: number; card_key: string; image: string }>;
+  const update = db.prepare(
+    `UPDATE card_assignments SET image = ?, name = ?, rarity = ? WHERE token_id = ?`
+  );
+
+  for (const row of rows) {
+    const stem = stemFromCardKey(row.card_key);
+    if (!stem) continue;
+    const card = cardByStem(cards, stem);
+    if (!card) continue;
+    if (
+      row.image === card.image &&
+      /* name/rarity already ok */ true
+    ) {
+      // still sync name/rarity in case of catalog rename
+    }
+    update.run(card.image, card.name, card.rarity, row.token_id);
+  }
 }
 
 /**
  * Seed full 16,120 inventory slots (one row per copy).
- * Idempotent when count already matches TOTAL_SUPPLY.
- * Preserves existing token assignments by re-marking matching free slots.
+ * Rebuilds when supply or IPFS folder CIDs change (fixes broken image URLs).
  */
 export function seedCardInventory(db: Db) {
   ensureAssignmentTables(db);
   const cards = buildCardCatalog();
   const totals = assertCatalogTotals(cards);
+  const fp = catalogFingerprint();
 
   const countRow = db
     .prepare("SELECT COUNT(*) AS c FROM card_inventory")
     .get() as { c: number };
-  if (countRow.c === TOTAL_SUPPLY) {
+  const meta = db
+    .prepare(`SELECT value FROM app_meta WHERE key = 'catalog_fp'`)
+    .get() as { value: string } | undefined;
+
+  if (countRow.c === TOTAL_SUPPLY && meta?.value === fp) {
+    refreshAssignmentImages(db, cards);
     return totals;
   }
 
   const existingAssignments = db
     .prepare(
-      `SELECT token_id, name, rarity, image FROM card_assignments`
+      `SELECT token_id, card_key, name, rarity, image FROM card_assignments`
     )
     .all() as Array<{
     token_id: number;
+    card_key: string;
     name: string;
     rarity: string;
     image: string;
@@ -92,18 +155,56 @@ export function seedCardInventory(db: Db) {
     }
   }
 
-  const mark = db.prepare(
+  const markByKey = db.prepare(
+    `UPDATE card_inventory SET assigned_token_id = ? WHERE card_key = ?`
+  );
+  const markByStem = db.prepare(
     `UPDATE card_inventory
      SET assigned_token_id = ?
      WHERE card_key = (
        SELECT card_key FROM card_inventory
-       WHERE assigned_token_id IS NULL AND image = ?
+       WHERE assigned_token_id IS NULL
+         AND card_key LIKE ?
        LIMIT 1
      )`
   );
+  const updateAssignment = db.prepare(
+    `UPDATE card_assignments SET card_key = ?, name = ?, rarity = ?, image = ? WHERE token_id = ?`
+  );
+
   for (const row of existingAssignments) {
-    mark.run(row.token_id, row.image);
+    const stem = stemFromCardKey(row.card_key);
+    const card = stem ? cardByStem(cards, stem) : undefined;
+    const image = card?.image ?? row.image;
+    const name = card?.name ?? row.name;
+    const rarity = card?.rarity ?? row.rarity;
+
+    let usedKey = row.card_key;
+    const exact = db
+      .prepare(
+        `SELECT card_key FROM card_inventory WHERE card_key = ? AND assigned_token_id IS NULL`
+      )
+      .get(row.card_key) as { card_key: string } | undefined;
+
+    if (exact) {
+      markByKey.run(row.token_id, row.card_key);
+    } else if (stem) {
+      markByStem.run(row.token_id, `%:${stem}#%`);
+      const marked = db
+        .prepare(
+          `SELECT card_key FROM card_inventory WHERE assigned_token_id = ?`
+        )
+        .get(row.token_id) as { card_key: string } | undefined;
+      if (marked) usedKey = marked.card_key;
+    }
+
+    updateAssignment.run(usedKey, name, rarity, image, row.token_id);
   }
+
+  db.prepare(
+    `INSERT INTO app_meta(key, value) VALUES('catalog_fp', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run(fp);
 
   return totals;
 }

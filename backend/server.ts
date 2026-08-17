@@ -40,9 +40,14 @@ seedCardInventory(db);
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3000);
-const corsOrigin = process.env.CORS_ORIGIN ?? "*";
 
-app.use(cors({ origin: corsOrigin === "*" ? true : corsOrigin }));
+app.use(
+  cors({
+    // Public NFT metadata must be readable by wallets/indexers (Tonkeeper, tonapi).
+    // Mini App origin still works; requests with no Origin are always allowed.
+    origin: true,
+  })
+);
 app.use(express.json());
 
 function getNftRow(id: number) {
@@ -115,6 +120,17 @@ app.get("/config", async (_req, res) => {
 
 app.get("/nft/:id", async (req, res) => {
   const rawId = String(req.params.id ?? "").replace(/\.json$/i, "");
+
+  // Off-chain URI before reveal: {baseUri}hidden.json
+  if (rawId.toLowerCase() === "hidden") {
+    return res.json({
+      name: "Alamdar",
+      description: "Reveal has not started yet.",
+      image: getHiddenImageUrl(),
+      attributes: [{ trait_type: "Status", value: "Hidden" }],
+    });
+  }
+
   const id = Number(rawId);
 
   if (!Number.isInteger(id) || id < 0 || id >= TOTAL_SUPPLY) {

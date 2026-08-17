@@ -67,11 +67,11 @@ fun makeNftCollectionStorage(admin: address, info: NftCollectionInfo): NftCollec
         nextItemIndex: 0,
         maxSupply: 16120,
         revealEnabled: false,
-        baseUri: "https://api.xxx.ir/nft/",
+        baseUri: "https://alamdar-backend1.onrender.com/nft/",
 
         content: CollectionContent {
             collectionMetadata: buildOnchainMetadata(info),
-            commonContent: "",
+            commonContent: "https://alamdar-backend1.onrender.com/nft/",
         }.toCell(),
 
         nftItemCode: build("AlamdarItem"),

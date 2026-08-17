@@ -214,7 +214,10 @@ get fun get_nft_content(
     _individualNftContent: string,
 ): Cell<OffchainMetadataReply> {
     val storage = lazy NftCollectionStorage.load();
+    // Wallets/indexers (Tonkeeper, tonapi) need a FULL off-chain URL (0x01 + URI).
+    // Relative paths like "0.json" resolve to empty metadata in wallets.
     var b = StringBuilder.create();
+    b.append(storage.baseUri);
 
     if (!storage.revealEnabled) {
         b.append("hidden.json");

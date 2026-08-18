@@ -1,0 +1,16 @@
+﻿node.exe : npm warn Unknown env config "devdir". This will stop working in the next major version of npm. See `npm 
+help npmrc` for supported config options.
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (npm warn Unknow...config options.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Ôùç injected env (18) from backend\.env // tip: Ôîÿ custom filepath { path: '/custom/path/.env' }
+{
+  "reveal": true,
+  "baseUri": "https://alamdar-backend1.onrender.com/nft/",
+  "next": 2,
+  "admin": "EQBU5EMR1NsuWgXqRMjSN5qMv4Cs5Y70yz0jQHjDuZvj59Se"
+}
+URI=00.json

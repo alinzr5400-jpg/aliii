@@ -30,9 +30,10 @@ import {
 } from "./assignments";
 import { TOTAL_SUPPLY } from "./cardCatalog";
 import { setRevealEnabled } from "./reveal";
+import { buildWalletHoldings, fetchWalletCollectionNfts } from "./ownership";
 
-// Keep the existing SQLite file for now.
-const db = require("./database");
+// Keep the existing SQLite file for now (swap via store.ts later).
+const db = require("./store").db;
 
 ensureOrdersTable(db);
 ensureAssignmentTables(db);
@@ -273,11 +274,15 @@ app.post("/mint/prepare", async (req, res) => {
       config.saleMode
     ).toString();
 
+    const startIndex =
+      config.saleMode === "public" ? Number(config.minted) || 0 : null;
+
     const order = createOrder(db, {
       buyer: buyerAddress,
       count,
       amountNano,
       mode: config.saleMode,
+      startIndex,
     });
 
     const validUntil = Math.floor(Date.now() / 1000) + 600;
@@ -367,13 +372,59 @@ app.post("/mint/confirm", async (req, res) => {
     }
 
     if (order.mode === "public") {
-      updateOrderStatus(db, orderId, "paid", { txHash: boc ?? undefined });
+      // Resolve minted token ids from chain ownership (source of truth), then assign cards.
+      let mintIndices: number[] = [];
+      for (let i = 0; i < 20; i++) {
+        try {
+          const owned = await fetchWalletCollectionNfts(order.buyer);
+          const start =
+            typeof order.start_index === "number" ? order.start_index : null;
+          const candidates = owned
+            .map((n) => n.tokenId)
+            .filter((id) => !getAssignment(db, id))
+            .filter((id) => (start === null ? true : id >= start))
+            .sort((a, b) => a - b);
+
+          if (candidates.length >= order.count) {
+            mintIndices = candidates.slice(0, order.count);
+            break;
+          }
+        } catch {
+          // TonAPI may lag; retry
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+
+      if (mintIndices.length === 0) {
+        updateOrderStatus(db, orderId, "paid", { txHash: boc ?? undefined });
+        return res.json({
+          ok: true,
+          status: "paid",
+          orderId,
+          mode: "public",
+          message:
+            "Payment sent. Waiting for indexer; retry confirm in a few seconds.",
+        });
+      }
+
+      const assignments = assignCardsForTokens(db, mintIndices);
+      updateOrderStatus(db, orderId, "minted", {
+        mintIndices,
+        txHash: boc ?? undefined,
+      });
+
       return res.json({
         ok: true,
-        status: "paid",
+        status: "minted",
         orderId,
         mode: "public",
-        message: "Payment sent. NFTs mint on-chain via PublicMint.",
+        mintIndices,
+        count: order.count,
+        assignments: assignments.map((a) => ({
+          tokenId: a.tokenId,
+          rarity: a.rarity,
+          cardKey: a.cardKey,
+        })),
       });
     }
 
@@ -427,8 +478,29 @@ app.get("/mint/order/:id", (req, res) => {
     mode: order.mode,
     status: order.status,
     mintIndices: order.mint_indices ? JSON.parse(order.mint_indices) : null,
+    startIndex: order.start_index,
     createdAt: order.created_at,
   });
+});
+
+/**
+ * On-chain holdings for a wallet in this collection + Legendary set progress.
+ * Foundation for reward bot / Mini App "my NFTs".
+ */
+app.get("/wallet/:address/holdings", async (req, res) => {
+  try {
+    Address.parse(req.params.address);
+  } catch {
+    return res.status(400).json({ error: "Invalid address" });
+  }
+  try {
+    const holdings = await buildWalletHoldings(db, req.params.address);
+    return res.json(holdings);
+  } catch (error) {
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to load holdings",
+    });
+  }
 });
 
 function requireAdminSecret(req: express.Request, res: express.Response): boolean {

@@ -1,18 +1,25 @@
 /**
  * Deploy a new AlamdarCollection on testnet whose admin is ADMIN_MNEMONIC.
- * Reuses nftItemCode from the existing collection so item code stays compatible.
  *
- * Usage (from alamdar-contract):
- *   npx tsx backend/deploy-collection.ts
+ * IMPORTANT:
+ *   1) acton build
+ *   2) preferably: acton wrapper AlamdarCollection --ts
+ *   3) npx tsx backend/deploy-collection.ts
+ *
+ * Uses code from build/*.json (fresh Acton output), NOT stale wrappers-ts CodeCell.
+ *
+ * Optional:
+ *   DEPLOY_SALT=wallet-fix-v3
  *
  * Prints the new TON_COLLECTION_ADDRESS to set on Render.
  */
 import dotenv from "dotenv";
 dotenv.config({ path: "./backend/.env" });
 
+import fs from "node:fs";
+import path from "node:path";
 import { mnemonicToPrivateKey } from "@ton/crypto";
 import {
-  Address,
   beginCell,
   Cell,
   SendMode,
@@ -24,17 +31,14 @@ import {
 import {
   AlamdarCollection,
   CollectionContent,
-  NftCollectionStorage,
   RoyaltyParams,
 } from "../wrappers-ts/AlamdarCollection.gen";
-
-const OLD_COLLECTION =
-  process.env.TON_COLLECTION_ADDRESS?.trim() ||
-  "kQBJukUFjWoPUtoQGjpxIzRH-duuTxAaMkRG61eA3Ktwqxtl";
 
 const BASE_URI =
   process.env.COLLECTION_BASE_URI?.trim() ||
   "https://alamdar-backend1.onrender.com/nft/";
+
+const DEPLOY_SALT = process.env.DEPLOY_SALT?.trim() || `alamdar-${Date.now()}`;
 
 function requireMnemonic(): string[] {
   const raw = process.env.ADMIN_MNEMONIC?.trim();
@@ -52,6 +56,26 @@ function createWallet(publicKey: Buffer) {
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Load compiled contract code produced by `acton build`. */
+function loadBuiltCode(contractName: string): Cell {
+  const file = path.join(__dirname, "..", "build", `${contractName}.json`);
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `Missing ${file}. Run: acton build`
+    );
+  }
+  const json = JSON.parse(fs.readFileSync(file, "utf8")) as {
+    code_boc64?: string;
+    hash?: string;
+  };
+  if (!json.code_boc64) {
+    throw new Error(`No code_boc64 in ${file}`);
+  }
+  const mtime = fs.statSync(file).mtime.toISOString();
+  console.log(`Using build/${contractName}.json (mtime ${mtime}, hash ${json.hash ?? "?"})`);
+  return Cell.fromBase64(json.code_boc64);
 }
 
 async function main() {
@@ -75,21 +99,10 @@ async function main() {
     throw new Error("Admin wallet needs at least ~0.25 testnet TON to deploy");
   }
 
-  // Reuse item code from existing live collection storage
-  const oldAddr = Address.parse(OLD_COLLECTION);
-  const oldState = await client.getContractState(oldAddr);
-  if (!oldState.data) {
-    throw new Error("Could not read old collection data");
-  }
-  const oldStorage = NftCollectionStorage.fromSlice(
-    Cell.fromBoc(oldState.data)[0].beginParse()
-  );
-  console.log(
-    "Reusing nftItemCode from old collection; old admin was",
-    oldStorage.adminAddress.toString()
-  );
+  const collectionCode = loadBuiltCode("AlamdarCollection");
+  const nftItemCode = loadBuiltCode("AlamdarItem");
+  console.log("Deploy salt:", DEPLOY_SALT);
 
-  // Minimal off-chain collection metadata cell (name/description/image as snake ref)
   const collectionMetadata = beginCell()
     .storeStringRefTail(
       JSON.stringify({
@@ -98,36 +111,45 @@ async function main() {
         image:
           process.env.HIDDEN_IMAGE_URL ||
           "https://gateway.pinata.cloud/ipfs/bafybeigsk72nzcyweotcgzxzzoryhfc6azdqro66xbsayyuiembksur3je",
+        deploySalt: DEPLOY_SALT,
       })
     )
     .endCell();
 
-  const collection = AlamdarCollection.fromStorage({
-    adminAddress: admin,
-    nextItemIndex: 0n,
-    maxSupply: 16120n,
-    revealEnabled: false,
-    baseUri: BASE_URI,
-    content: {
-      ref: CollectionContent.create({
-        collectionMetadata,
-        commonContent: BASE_URI,
-      }),
+  const collection = AlamdarCollection.fromStorage(
+    {
+      adminAddress: admin,
+      nextItemIndex: 0n,
+      maxSupply: 16120n,
+      revealEnabled: false,
+      baseUri: BASE_URI,
+      content: {
+        ref: CollectionContent.create({
+          collectionMetadata,
+          commonContent: BASE_URI,
+        }),
+      },
+      nftItemCode,
+      royaltyParams: {
+        ref: RoyaltyParams.create({
+          numerator: 5n,
+          denominator: 100n,
+          royaltyAddress: admin,
+        }),
+      },
     },
-    nftItemCode: oldStorage.nftItemCode,
-    royaltyParams: {
-      ref: RoyaltyParams.create({
-        numerator: 5n,
-        denominator: 100n,
-        royaltyAddress: admin,
-      }),
-    },
-  });
-
-  console.log(
-    "New collection address:",
-    collection.address.toString({ bounceable: true, testOnly: true })
+    { overrideContractCode: collectionCode }
   );
+
+  const newAddr = collection.address.toString({ bounceable: true, testOnly: true });
+  console.log("New collection address:", newAddr);
+
+  const existing = await client.getContractState(collection.address);
+  if (existing.state === "active") {
+    throw new Error(
+      `Address ${newAddr} is already active. Set a new DEPLOY_SALT and retry.`
+    );
+  }
 
   const openedCollection = client.open(collection);
   await openedCollection.sendDeploy(openedWallet.sender(key.secretKey), toNano("0.15"), {
@@ -139,14 +161,32 @@ async function main() {
     await sleep(3000);
     try {
       const data = await openedCollection.getCollectionData();
+      const minted = Number(data.nextItemIndex);
+      if (minted !== 0) {
+        throw new Error(
+          `Expected fresh collection (minted=0) but got minted=${minted}`
+        );
+      }
+
+      // Sanity: get_nft_content must return absolute URL (wallet fix)
+      const content = await openedCollection.getNftContent(0n, "0");
+      const uri =
+        (content as { ref?: { string?: string } }).ref?.string ??
+        (content as { string?: string }).string ??
+        "";
+      console.log("get_nft_content(0) =>", uri);
+      if (!/^https?:\/\//i.test(uri)) {
+        throw new Error(
+          `Deployed code still returns relative metadata URI (${uri}). ` +
+            `Re-run acton build, then redeploy. Do not use stale wrappers-ts CodeCell.`
+        );
+      }
+
       console.log(
         JSON.stringify(
           {
             ok: true,
-            collectionAddress: collection.address.toString({
-              bounceable: true,
-              testOnly: true,
-            }),
+            collectionAddress: newAddr,
             collectionAddressEQ: collection.address.toString({
               bounceable: true,
               testOnly: false,
@@ -155,20 +195,25 @@ async function main() {
               bounceable: true,
               testOnly: false,
             }),
-            nextItemIndex: Number(data.nextItemIndex),
+            nextItemIndex: minted,
             maxSupply: Number(data.maxSupply),
             baseUri: data.baseUri,
+            sampleMetadataUri: uri,
           },
           null,
           2
         )
       );
-      console.log(
-        "\nSet on Render:\nTON_COLLECTION_ADDRESS=" +
-          collection.address.toString({ bounceable: true, testOnly: true })
-      );
+      console.log("\nSet on Render:\nTON_COLLECTION_ADDRESS=" + newAddr);
       return;
-    } catch {
+    } catch (e) {
+      if (
+        e instanceof Error &&
+        (e.message.includes("Expected fresh") ||
+          e.message.includes("relative metadata"))
+      ) {
+        throw e;
+      }
       process.stdout.write(".");
     }
   }

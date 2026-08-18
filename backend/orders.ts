@@ -19,6 +19,7 @@ export type MintOrder = {
   created_at: number;
   mint_indices: string | null;
   tx_hash: string | null;
+  start_index: number | null;
 };
 
 export function ensureOrdersTable(db: Db) {
@@ -32,9 +33,16 @@ export function ensureOrdersTable(db: Db) {
       status TEXT NOT NULL,
       created_at INTEGER NOT NULL,
       mint_indices TEXT,
-      tx_hash TEXT
+      tx_hash TEXT,
+      start_index INTEGER
     );
   `);
+  // Additive migration for older DBs
+  try {
+    db.prepare("SELECT start_index FROM orders LIMIT 1").get();
+  } catch {
+    db.exec("ALTER TABLE orders ADD COLUMN start_index INTEGER");
+  }
 }
 
 export function createOrder(
@@ -44,14 +52,23 @@ export function createOrder(
     count: number;
     amountNano: string;
     mode: string;
+    startIndex?: number | null;
   }
 ): MintOrder {
   const id = randomUUID().replace(/-/g, "").slice(0, 16);
   const created_at = Math.floor(Date.now() / 1000);
   db.prepare(
-    `INSERT INTO orders (id, buyer, count, amount_nano, mode, status, created_at, mint_indices, tx_hash)
-     VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, NULL)`
-  ).run(id, args.buyer, args.count, args.amountNano, args.mode, created_at);
+    `INSERT INTO orders (id, buyer, count, amount_nano, mode, status, created_at, mint_indices, tx_hash, start_index)
+     VALUES (?, ?, ?, ?, ?, 'pending', ?, NULL, NULL, ?)`
+  ).run(
+    id,
+    args.buyer,
+    args.count,
+    args.amountNano,
+    args.mode,
+    created_at,
+    args.startIndex ?? null
+  );
 
   return getOrder(db, id)!;
 }

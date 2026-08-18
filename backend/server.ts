@@ -10,6 +10,7 @@ import {
   buildPublicMintPayload,
   buildTextCommentPayload,
   mintPaymentNano,
+  toTonConnectAddress,
 } from "./mintPayload";
 import {
   createOrder,
@@ -261,7 +262,10 @@ app.post("/mint/prepare", async (req, res) => {
     try {
       Address.parse(buyerAddress);
     } catch {
-      return res.status(400).json({ error: "Invalid buyerAddress" });
+      return res.status(400).json({
+        error:
+          "Invalid buyerAddress. Reconnect wallet and try again (use friendly EQ/UQ address).",
+      });
     }
 
     if (config.remaining < count) {
@@ -286,6 +290,10 @@ app.post("/mint/prepare", async (req, res) => {
     });
 
     const validUntil = Math.floor(Date.now() / 1000) + 600;
+    const network =
+      (process.env.NETWORK ?? "testnet").toLowerCase() === "mainnet"
+        ? "-239"
+        : "-3";
 
     if (config.saleMode === "public") {
       if (!config.collectionAddress) {
@@ -301,9 +309,10 @@ app.post("/mint/prepare", async (req, res) => {
         count,
         transaction: {
           validUntil,
+          network,
           messages: [
             {
-              address: config.collectionAddress,
+              address: toTonConnectAddress(config.collectionAddress),
               amount: amountNano,
               payload: buildPublicMintPayload(count),
             },
@@ -325,9 +334,10 @@ app.post("/mint/prepare", async (req, res) => {
       count,
       transaction: {
         validUntil,
+        network,
         messages: [
           {
-            address: config.paymentAddress,
+            address: toTonConnectAddress(config.paymentAddress),
             amount: amountNano,
             payload: buildTextCommentPayload(`alamdar:${order.id}`),
           },

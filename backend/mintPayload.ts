@@ -44,3 +44,15 @@ export function mintPaymentNano(
 export function toFriendlyAddress(raw: string): string {
   return Address.parse(raw).toString({ bounceable: true, testOnly: false });
 }
+
+/**
+ * TonConnect (esp. Android Tonkeeper) is more reliable with EQ/UQ forms
+ * than testnet-flagged kQ/0Q addresses in message.address.
+ */
+export function toTonConnectAddress(raw: string): string {
+  return Address.parse(raw).toString({
+    bounceable: true,
+    testOnly: false,
+    urlSafe: true,
+  });
+}

@@ -84,6 +84,8 @@ export async function buildSaleConfig(): Promise<SaleConfig> {
       adminAddress: state.adminAddress,
       baseUri: state.baseUri,
       hiddenImage: staticSettings.hiddenImage,
+      /** Extra TON per NFT attached as deploy gas in PublicMint mode */
+      publicMintItemGas: 0.05,
     };
   } catch {
     const totalSupply = TOTAL_SUPPLY;
@@ -109,6 +111,7 @@ export async function buildSaleConfig(): Promise<SaleConfig> {
       adminAddress: null,
       baseUri: null,
       hiddenImage: staticSettings.hiddenImage,
+      publicMintItemGas: 0.05,
     };
   }
 }

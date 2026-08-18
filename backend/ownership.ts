@@ -5,8 +5,10 @@
  */
 
 import { Address } from "@ton/ton";
-import { getAssignment } from "./assignments";
+import { assignCardsForTokens, getAssignment } from "./assignments";
 import { buildCardCatalog } from "./cardCatalog";
+import { readCollectionState } from "./collection";
+import { getHiddenImageUrl } from "./media";
 import { getCollectionAddress } from "./ton";
 
 type Db = {
@@ -73,18 +75,36 @@ export async function buildWalletHoldings(
   count: number;
   items: HoldingItem[];
   legendaryProgress: LegendaryPersonProgress[];
+  reveal: boolean;
 }> {
   const nfts = await fetchWalletCollectionNfts(ownerAddress);
+
+  // After Render restart SQLite is empty — backfill card assignments for owned tokens.
+  const missing = nfts
+    .map((n) => n.tokenId)
+    .filter((id) => !getAssignment(db, id));
+  if (missing.length > 0) {
+    assignCardsForTokens(db, missing);
+  }
+
+  let reveal = false;
+  try {
+    reveal = Boolean((await readCollectionState()).revealEnabled);
+  } catch {
+    reveal = false;
+  }
+  const hiddenImage = getHiddenImageUrl();
+
   const items: HoldingItem[] = nfts
     .map((nft) => {
       const assigned = getAssignment(db, nft.tokenId);
       return {
         tokenId: nft.tokenId,
         address: nft.address,
-        name: assigned?.name ?? null,
+        name: assigned?.name ?? `Alamdar #${nft.tokenId}`,
         rarity: assigned?.rarity ?? null,
         cardKey: assigned?.cardKey ?? null,
-        image: assigned?.image ?? null,
+        image: reveal ? assigned?.image ?? null : hiddenImage,
       };
     })
     .sort((a, b) => a.tokenId - b.tokenId);
@@ -99,6 +119,7 @@ export async function buildWalletHoldings(
     count: items.length,
     items,
     legendaryProgress,
+    reveal,
   };
 }
 

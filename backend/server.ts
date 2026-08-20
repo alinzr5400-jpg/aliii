@@ -289,17 +289,14 @@ app.post("/mint/prepare", async (req, res) => {
       startIndex,
     });
 
-    const validUntil = Math.floor(Date.now() / 1000) + 600;
-    const network =
-      (process.env.NETWORK ?? "testnet").toLowerCase() === "mainnet"
-        ? "-239"
-        : "-3";
+    const validUntil = Math.floor(Date.now() / 1000) + 900;
 
     if (config.saleMode === "public") {
       if (!config.collectionAddress) {
         return res.status(500).json({ error: "Collection address not configured" });
       }
 
+      // Android Tonkeeper is fragile: keep payload minimal, EQ address, no extra fields.
       return res.json({
         orderId: order.id,
         mode: "public",
@@ -309,12 +306,11 @@ app.post("/mint/prepare", async (req, res) => {
         count,
         transaction: {
           validUntil,
-          network,
           messages: [
             {
               address: toTonConnectAddress(config.collectionAddress),
-              amount: amountNano,
-              payload: buildPublicMintPayload(count),
+              amount: String(amountNano),
+              payload: buildPublicMintPayload(count, BigInt(Date.now())),
             },
           ],
         },
@@ -334,11 +330,10 @@ app.post("/mint/prepare", async (req, res) => {
       count,
       transaction: {
         validUntil,
-        network,
         messages: [
           {
             address: toTonConnectAddress(config.paymentAddress),
-            amount: amountNano,
+            amount: String(amountNano),
             payload: buildTextCommentPayload(`alamdar:${order.id}`),
           },
         ],

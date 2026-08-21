@@ -153,7 +153,7 @@ fun onInternalMessage(in: InMessage) {
             assert (storage.nextItemIndex + count <= MAX_SUPPLY) throw Errors.SoldOut;
 
             val required = (MINT_PRICE + PUBLIC_MINT_ITEM_GAS) * count;
-            assert (in.value >= required) throw Errors.InsufficientPayment;
+            assert (in.valueCoins >= required) throw Errors.InsufficientPayment;
 
             var i = 0;
             while (i < count) {

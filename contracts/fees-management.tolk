@@ -10,4 +10,4 @@ const MINT_PRICE = ton("0.5")
 const PUBLIC_MINT_ITEM_GAS = ton("0.05")
 
 /// Max NFTs a single PublicMint message can buy.
-const PUBLIC_MINT_MAX_COUNT = 10
+const PUBLIC_MINT_MAX_COUNT = 88

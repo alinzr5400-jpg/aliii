@@ -31,7 +31,7 @@ function parseSaleMode(): "admin" | "public" {
 export function getStaticSaleSettings() {
   const mintPrice = Number(process.env.MINT_PRICE ?? "0.5");
   const minBuy = Number(process.env.MIN_BUY ?? "1");
-  const maxBuy = Number(process.env.MAX_BUY ?? "10");
+  const maxBuy = Number(process.env.MAX_BUY ?? "88");
   const saleStartsAtRaw = process.env.SALE_START_AT?.trim();
   const saleStartsAt = saleStartsAtRaw
     ? Math.floor(new Date(saleStartsAtRaw).getTime() / 1000)
@@ -40,7 +40,7 @@ export function getStaticSaleSettings() {
   return {
     mintPrice: Number.isFinite(mintPrice) ? mintPrice : 0.5,
     minBuy: Number.isFinite(minBuy) ? minBuy : 1,
-    maxBuy: Number.isFinite(maxBuy) ? maxBuy : 10,
+    maxBuy: Number.isFinite(maxBuy) ? maxBuy : 88,
     saleStartsAt,
     saleMode: parseSaleMode(),
     network: process.env.NETWORK ?? "testnet",

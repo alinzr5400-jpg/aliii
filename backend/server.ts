@@ -21,6 +21,7 @@ import {
 import { adminMintToBuyer } from "./adminMint";
 import { isRateLimitError } from "./ton";
 import { getHiddenImageUrl, LEGENDARY_FILES, MYTHIC_FILES, UNIQUE_FILES } from "./media";
+import { proxyIpfsMedia } from "./mediaProxy";
 import {
   assignCardsForTokens,
   ensureAssignmentTables,
@@ -52,6 +53,14 @@ app.use(
 );
 app.use(express.json());
 
+/** Tonkeeper-friendly image proxy (Pinata → our domain). */
+app.get("/media/ipfs/:cid", (req, res) => {
+  void proxyIpfsMedia(req, res);
+});
+app.get("/media/ipfs/:cid/:file", (req, res) => {
+  void proxyIpfsMedia(req, res);
+});
+
 function getNftRow(id: number) {
   return db
     .prepare("SELECT id, name, rarity, image FROM martyrs WHERE id = ?")
@@ -68,6 +77,11 @@ app.get("/health", (_req, res) => {
       mythicCards: MYTHIC_FILES.length,
       uniqueCards: UNIQUE_FILES.length,
       totalSupply: TOTAL_SUPPLY,
+      proxy: process.env.MEDIA_PROXY !== "0",
+      publicBase:
+        process.env.PUBLIC_BASE_URL?.trim() ||
+        process.env.RENDER_EXTERNAL_URL?.trim() ||
+        null,
     },
   });
 });

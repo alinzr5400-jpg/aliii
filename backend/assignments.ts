@@ -8,6 +8,8 @@ import {
   LEGENDARY_FOLDER_CID,
   MYTHIC_FOLDER_CID,
   UNIQUE_FOLDER_CID,
+  getPublicBaseUrl,
+  useMediaProxy,
 } from "./media";
 
 type Db = {
@@ -41,6 +43,7 @@ function catalogFingerprint(): string {
     LEGENDARY_FOLDER_CID,
     MYTHIC_FOLDER_CID,
     UNIQUE_FOLDER_CID,
+    useMediaProxy() ? getPublicBaseUrl() || "proxy" : "direct",
   ].join("|");
 }
 

@@ -1,6 +1,10 @@
 /**
  * Pinata / IPFS media for Alamdar dynamic metadata.
  * Images live on IPFS; JSON metadata stays dynamic via GET /nft/:id.
+ *
+ * When PUBLIC_BASE_URL or RENDER_EXTERNAL_URL is set, metadata `image`
+ * points at our backend `/media/ipfs/...` proxy so Tonkeeper/TonAPI
+ * imgproxy can fetch reliably (public Pinata often fails from their servers).
  */
 
 const DEFAULT_GATEWAY =
@@ -96,17 +100,44 @@ export const UNIQUE_FILES: string[] = (() => {
   return files;
 })();
 
+export function getPublicBaseUrl(): string | null {
+  const raw =
+    process.env.PUBLIC_BASE_URL?.trim() ||
+    process.env.RENDER_EXTERNAL_URL?.trim() ||
+    "";
+  return raw.replace(/\/$/, "") || null;
+}
+
+/** Prefer proxy URLs for wallet/TonAPI unless MEDIA_PROXY=0. */
+export function useMediaProxy(): boolean {
+  if (process.env.MEDIA_PROXY === "0") return false;
+  return Boolean(getPublicBaseUrl());
+}
+
+export const IPFS_FETCH_GATEWAYS = [
+  DEFAULT_GATEWAY,
+  "https://gateway.pinata.cloud/ipfs",
+  "https://ipfs.io/ipfs",
+  "https://dweb.link/ipfs",
+  "https://nftstorage.link/ipfs",
+].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
 export function ipfsUrl(cid: string, path?: string): string {
+  const file = path?.replace(/^\//, "") || "";
+  const publicBase = getPublicBaseUrl();
+
+  if (publicBase && useMediaProxy()) {
+    return file
+      ? `${publicBase}/media/ipfs/${cid}/${file}`
+      : `${publicBase}/media/ipfs/${cid}`;
+  }
+
   const base = `${DEFAULT_GATEWAY}/${cid}`;
-  if (!path) return base;
-  return `${base}/${path.replace(/^\//, "")}`;
+  return file ? `${base}/${file}` : base;
 }
 
 export function getHiddenImageUrl(): string {
-  return (
-    process.env.HIDDEN_IMAGE_URL?.trim() ||
-    ipfsUrl(HIDDEN_IMAGE_CID)
-  );
+  return process.env.HIDDEN_IMAGE_URL?.trim() || ipfsUrl(HIDDEN_IMAGE_CID);
 }
 
 export function getLegendaryImageUrl(filename: string): string {

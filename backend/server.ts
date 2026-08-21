@@ -26,12 +26,12 @@ import {
   ensureAssignmentTables,
   ensureMintedAssignments,
   getAssignment,
-  listAssignments,
   seedCardInventory,
 } from "./assignments";
 import { TOTAL_SUPPLY } from "./cardCatalog";
 import { setRevealEnabled } from "./reveal";
 import { buildWalletHoldings, fetchWalletCollectionNfts } from "./ownership";
+import { buildShowcaseItems, loadMartyrBios } from "./showcase";
 
 // Keep the existing SQLite file for now (swap via store.ts later).
 const db = require("./store").db;
@@ -192,44 +192,76 @@ app.get("/nft/:id", async (req, res) => {
   }
 });
 
-app.get("/gallery", async (req, res) => {
-  const limit = Math.min(Number(req.query.limit ?? 6), 24);
+/** Curated fixed showcase (not on-chain minted feed). */
+app.get("/showcase", (_req, res) => {
   try {
-    const state = await readCollectionState();
-    const hiddenImage = getHiddenImageUrl();
+    const items = buildShowcaseItems();
+    res.json({ kind: "showcase", count: items.length, items });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to load showcase",
+    });
+  }
+});
 
-    if (!state.revealEnabled) {
-      const cards = Array.from({ length: limit }, (_, i) => ({
-        id: i,
-        name: "Alamdar",
-        role: "Hidden",
-        rarity: "Hidden",
-        image: hiddenImage,
-      }));
-      return res.json({ reveal: false, items: cards });
+/** Backward-compatible alias → curated showcase. */
+app.get("/gallery", (_req, res) => {
+  try {
+    const items = buildShowcaseItems();
+    res.json({
+      kind: "showcase",
+      reveal: true,
+      count: items.length,
+      items: items.map((row) => ({
+        id: row.stem,
+        stem: row.stem,
+        name: row.name,
+        role: row.rarity,
+        rarity: row.rarity,
+        image: row.image,
+        summary: row.summary,
+        martyrId: row.martyrId,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to load gallery",
+    });
+  }
+});
+
+/** Memorial bios for the 114 named martyrs. */
+app.get("/martyrs", (req, res) => {
+  try {
+    const q = String(req.query.q ?? "").trim().toLowerCase();
+    let items = loadMartyrBios();
+    if (q) {
+      items = items.filter(
+        (m) =>
+          m.name.toLowerCase().includes(q) ||
+          m.summary.toLowerCase().includes(q) ||
+          String(m.id) === q
+      );
     }
+    res.json({ count: items.length, total: 114, items });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to load martyrs",
+    });
+  }
+});
 
-    // Recover assignments if SQLite was wiped after redeploy/restart.
-    ensureMintedAssignments(db, Number(state.nextItemIndex));
-
-    const assigned = listAssignments(db, limit);
-    if (assigned.length > 0) {
-      return res.json({
-        reveal: true,
-        items: assigned.map((row) => ({
-          id: row.tokenId,
-          name: row.name,
-          role: row.rarity,
-          rarity: row.rarity,
-          image: row.image,
-        })),
-      });
+app.get("/martyrs/:id", (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const martyr = loadMartyrBios().find((m) => m.id === id);
+    if (!martyr) {
+      return res.status(404).json({ error: "Martyr not found" });
     }
-
-    return res.json({ reveal: true, items: [] });
+    return res.json(martyr);
   } catch (error) {
     return res.status(500).json({
-      error: error instanceof Error ? error.message : "Failed to load gallery",
+      error: error instanceof Error ? error.message : "Failed to load martyr",
     });
   }
 });

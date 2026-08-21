@@ -108,6 +108,11 @@ export function getPublicBaseUrl(): string | null {
   return raw.replace(/\/$/, "") || null;
 }
 
+/** Bump on Render to force TonAPI/Tonkeeper imgproxy cache refresh. */
+export function getMediaVersion(): string {
+  return (process.env.MEDIA_VERSION?.trim() || "1").replace(/[^\w.-]/g, "") || "1";
+}
+
 /** Prefer proxy URLs for wallet/TonAPI unless MEDIA_PROXY=0. */
 export function useMediaProxy(): boolean {
   if (process.env.MEDIA_PROXY === "0") return false;
@@ -125,15 +130,18 @@ export const IPFS_FETCH_GATEWAYS = [
 export function ipfsUrl(cid: string, path?: string): string {
   const file = path?.replace(/^\//, "") || "";
   const publicBase = getPublicBaseUrl();
+  const ver = getMediaVersion();
+  const q = `v=${encodeURIComponent(ver)}`;
 
   if (publicBase && useMediaProxy()) {
     return file
-      ? `${publicBase}/media/ipfs/${cid}/${file}`
-      : `${publicBase}/media/ipfs/${cid}`;
+      ? `${publicBase}/media/ipfs/${cid}/${file}?${q}`
+      : `${publicBase}/media/ipfs/${cid}?${q}`;
   }
 
   const base = `${DEFAULT_GATEWAY}/${cid}`;
-  return file ? `${base}/${file}` : base;
+  const url = file ? `${base}/${file}` : base;
+  return `${url}?${q}`;
 }
 
 export function getHiddenImageUrl(): string {

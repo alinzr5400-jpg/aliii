@@ -42,29 +42,78 @@ export type LegendaryPersonProgress = {
   complete: boolean;
 };
 
+function sameAccount(a: string, b: string): boolean {
+  try {
+    return Address.parse(a).equals(Address.parse(b));
+  } catch {
+    return false;
+  }
+}
+
+async function fetchJson(url: string): Promise<unknown> {
+  const res = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!res.ok) {
+    throw new Error(`TonAPI failed: HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
+ * Wallet NFT list: merge account endpoint + collection items filtered by owner.
+ * Account endpoint often lags and returns a subset (bought 3, site showed 1).
+ */
 export async function fetchWalletCollectionNfts(
   ownerAddress: string
 ): Promise<Array<{ tokenId: number; address: string }>> {
   const owner = Address.parse(ownerAddress).toRawString();
   const collection = getCollectionAddress().toRawString();
-  const url =
+  const byId = new Map<number, { tokenId: number; address: string }>();
+
+  const accountUrl =
     `${tonApiBase()}/v2/accounts/${encodeURIComponent(owner)}/nfts` +
     `?collection=${encodeURIComponent(collection)}&limit=1000&indirect_ownership=false`;
+  const collectionUrl =
+    `${tonApiBase()}/v2/nfts/collections/${encodeURIComponent(collection)}/items?limit=1000`;
 
-  const res = await fetch(url, {
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) {
-    throw new Error(`TonAPI holdings failed: HTTP ${res.status}`);
+  const [accountRes, collectionRes] = await Promise.allSettled([
+    fetchJson(accountUrl),
+    fetchJson(collectionUrl),
+  ]);
+
+  if (accountRes.status === "fulfilled") {
+    const data = accountRes.value as {
+      nft_items?: Array<{ address: string; index: number }>;
+    };
+    for (const item of data.nft_items ?? []) {
+      const tokenId = Number(item.index);
+      if (!Number.isInteger(tokenId) || tokenId < 0) continue;
+      byId.set(tokenId, { tokenId, address: item.address });
+    }
   }
-  const data = (await res.json()) as {
-    nft_items?: Array<{ address: string; index: number }>;
-  };
 
-  return (data.nft_items ?? []).map((item) => ({
-    tokenId: Number(item.index),
-    address: item.address,
-  }));
+  if (collectionRes.status === "fulfilled") {
+    const data = collectionRes.value as {
+      nft_items?: Array<{
+        address: string;
+        index: number;
+        owner?: { address?: string };
+      }>;
+    };
+    for (const item of data.nft_items ?? []) {
+      if (!item.owner?.address || !sameAccount(item.owner.address, owner)) {
+        continue;
+      }
+      const tokenId = Number(item.index);
+      if (!Number.isInteger(tokenId) || tokenId < 0) continue;
+      byId.set(tokenId, { tokenId, address: item.address });
+    }
+  }
+
+  if (byId.size === 0 && accountRes.status === "rejected" && collectionRes.status === "rejected") {
+    throw new Error("TonAPI holdings failed on both endpoints");
+  }
+
+  return [...byId.values()].sort((a, b) => a.tokenId - b.tokenId);
 }
 
 export async function buildWalletHoldings(
@@ -80,6 +129,8 @@ export async function buildWalletHoldings(
   const nfts = await fetchWalletCollectionNfts(ownerAddress);
 
   // After Render restart SQLite is empty — backfill card assignments for owned tokens.
+  // Also backfill sequential gaps: if chain says collection minted N items and this
+  // wallet owns some, ensure every owned id has an assignment.
   const missing = nfts
     .map((n) => n.tokenId)
     .filter((id) => !getAssignment(db, id));

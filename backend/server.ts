@@ -425,41 +425,66 @@ app.post("/mint/confirm", async (req, res) => {
     }
 
     if (order.mode === "public") {
-      // Resolve minted token ids from chain ownership (source of truth), then assign cards.
-      let mintIndices: number[] = [];
-      for (let i = 0; i < 20; i++) {
-        try {
-          const owned = await fetchWalletCollectionNfts(order.buyer);
-          const start =
-            typeof order.start_index === "number" ? order.start_index : null;
-          const candidates = owned
-            .map((n) => n.tokenId)
-            .filter((id) => !getAssignment(db, id))
-            .filter((id) => (start === null ? true : id >= start))
-            .sort((a, b) => a - b);
-
-          if (candidates.length >= order.count) {
-            mintIndices = candidates.slice(0, order.count);
-            break;
-          }
-        } catch {
-          // TonAPI may lag; retry
-        }
-        await new Promise((r) => setTimeout(r, 2500));
+      // PublicMint always deploys sequential indices starting at prepare-time nextItemIndex.
+      // Do NOT rely on TonAPI returning the full ownership list (it often lags and
+      // caused "bought 3, site shows 1").
+      const start =
+        order.start_index === null || order.start_index === undefined
+          ? NaN
+          : Number(order.start_index);
+      if (!Number.isInteger(start) || start < 0) {
+        return res.status(500).json({
+          error: "Order is missing start_index; cannot confirm PublicMint",
+        });
       }
 
-      if (mintIndices.length === 0) {
+      const expected = Array.from(
+        { length: order.count },
+        (_, i) => start + i
+      );
+
+      let chainReady = false;
+      let ownedCount = 0;
+      for (let i = 0; i < 5; i++) {
+        try {
+          const state = await readCollectionState();
+          if (Number(state.nextItemIndex) >= start + order.count) {
+            chainReady = true;
+            try {
+              const owned = await fetchWalletCollectionNfts(order.buyer);
+              const ownedSet = new Set(owned.map((n) => n.tokenId));
+              ownedCount = expected.filter((id) => ownedSet.has(id)).length;
+              // Prefer full ownership visibility, but after a few tries trust the chain
+              // (PublicMint is atomic to the sender).
+              if (ownedCount >= order.count || i >= 2) {
+                break;
+              }
+            } catch {
+              if (i >= 2) break;
+            }
+          }
+        } catch {
+          // RPC lag
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+
+      if (!chainReady) {
         updateOrderStatus(db, orderId, "paid", { txHash: boc ?? undefined });
         return res.json({
           ok: true,
           status: "paid",
           orderId,
           mode: "public",
+          startIndex: start,
+          expectedIndices: expected,
+          ownedCount,
           message:
-            "Payment sent. Waiting for indexer; retry confirm in a few seconds.",
+            "Payment sent. Waiting for collection nextItemIndex; retry confirm shortly.",
         });
       }
 
+      const mintIndices = expected;
       const assignments = assignCardsForTokens(db, mintIndices);
       updateOrderStatus(db, orderId, "minted", {
         mintIndices,
@@ -473,6 +498,7 @@ app.post("/mint/confirm", async (req, res) => {
         mode: "public",
         mintIndices,
         count: order.count,
+        ownedCount,
         assignments: assignments.map((a) => ({
           tokenId: a.tokenId,
           rarity: a.rarity,

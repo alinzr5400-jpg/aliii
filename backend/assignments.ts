@@ -8,6 +8,7 @@ import {
   LEGENDARY_FOLDER_CID,
   MYTHIC_FOLDER_CID,
   UNIQUE_FOLDER_CID,
+  getMediaVersion,
   getPublicBaseUrl,
   useMediaProxy,
 } from "./media";
@@ -44,6 +45,7 @@ function catalogFingerprint(): string {
     MYTHIC_FOLDER_CID,
     UNIQUE_FOLDER_CID,
     useMediaProxy() ? getPublicBaseUrl() || "proxy" : "direct",
+    getMediaVersion(),
   ].join("|");
 }
 
@@ -85,6 +87,37 @@ export function ensureAssignmentTables(db: Db) {
       value TEXT NOT NULL
     );
   `);
+}
+
+/**
+ * Token ids restart at 0 on each new collection deploy.
+ * Assignments are keyed only by token_id — wipe when collection address changes
+ * so old-collection art is not reused for the new collection's #0,#1,...
+ */
+export function resetAssignmentsIfCollectionChanged(db: Db) {
+  ensureAssignmentTables(db);
+  const current =
+    process.env.TON_COLLECTION_ADDRESS?.trim() ||
+    process.env.COLLECTION_ADDRESS?.trim() ||
+    "";
+  if (!current) return;
+
+  const prev = db
+    .prepare(`SELECT value FROM app_meta WHERE key = 'collection_addr'`)
+    .get() as { value: string } | undefined;
+
+  if (prev?.value === current) return;
+
+  db.exec(`DELETE FROM card_assignments`);
+  db.exec(`UPDATE card_inventory SET assigned_token_id = NULL`);
+  db.prepare(
+    `INSERT INTO app_meta(key, value) VALUES('collection_addr', ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+  ).run(current);
+
+  console.log(
+    `[alamdar] Collection address changed — cleared card assignments for fresh mint map`
+  );
 }
 
 function refreshAssignmentImages(db: Db, cards: CatalogCard[]) {

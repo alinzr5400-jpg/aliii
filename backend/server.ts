@@ -27,6 +27,7 @@ import {
   ensureAssignmentTables,
   ensureMintedAssignments,
   getAssignment,
+  resetAssignmentsIfCollectionChanged,
   seedCardInventory,
 } from "./assignments";
 import { TOTAL_SUPPLY } from "./cardCatalog";
@@ -39,6 +40,7 @@ const db = require("./store").db;
 
 ensureOrdersTable(db);
 ensureAssignmentTables(db);
+resetAssignmentsIfCollectionChanged(db);
 seedCardInventory(db);
 
 const app = express();

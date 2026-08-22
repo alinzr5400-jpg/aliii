@@ -5,7 +5,11 @@
  */
 
 import { Address } from "@ton/ton";
-import { assignCardsForTokens, getAssignment } from "./assignments";
+import {
+  assignCardsForTokens,
+  getAssignment,
+  upsertAssignmentFromCardKey,
+} from "./assignments";
 import { buildCardCatalog } from "./cardCatalog";
 import { readCollectionState } from "./collection";
 import { getHiddenImageUrl } from "./media";
@@ -116,6 +120,43 @@ export async function fetchWalletCollectionNfts(
   return [...byId.values()].sort((a, b) => a.tokenId - b.tokenId);
 }
 
+let lastHydrateAt = 0;
+
+function cardKeyFromMetadata(meta?: {
+  attributes?: Array<{ trait_type?: string; value?: unknown }>;
+}): string | null {
+  const card = meta?.attributes?.find((a) => a.trait_type === "Card")?.value;
+  return typeof card === "string" && card.includes(":") ? card : null;
+}
+
+/**
+ * Restore SQLite assignments from TonAPI cached metadata (what Tonkeeper shows).
+ * Prevents random re-roll after Render disk wipe.
+ */
+export async function hydrateAssignmentsFromTonApi(db: Db): Promise<number> {
+  if (Date.now() - lastHydrateAt < 30_000) return 0;
+  const collection = getCollectionAddress().toRawString();
+  const url = `${tonApiBase()}/v2/nfts/collections/${encodeURIComponent(collection)}/items?limit=1000`;
+  const data = (await fetchJson(url)) as {
+    nft_items?: Array<{
+      index: number;
+      metadata?: {
+        attributes?: Array<{ trait_type?: string; value?: unknown }>;
+      };
+    }>;
+  };
+
+  let n = 0;
+  for (const item of data.nft_items ?? []) {
+    const tokenId = Number(item.index);
+    const key = cardKeyFromMetadata(item.metadata);
+    if (!Number.isInteger(tokenId) || tokenId < 0 || !key) continue;
+    if (upsertAssignmentFromCardKey(db, tokenId, key)) n += 1;
+  }
+  lastHydrateAt = Date.now();
+  return n;
+}
+
 export async function buildWalletHoldings(
   db: Db,
   ownerAddress: string
@@ -126,11 +167,15 @@ export async function buildWalletHoldings(
   legendaryProgress: LegendaryPersonProgress[];
   reveal: boolean;
 }> {
+  try {
+    await hydrateAssignmentsFromTonApi(db);
+  } catch {
+    /* indexer optional */
+  }
+
   const nfts = await fetchWalletCollectionNfts(ownerAddress);
 
-  // After Render restart SQLite is empty — backfill card assignments for owned tokens.
-  // Also backfill sequential gaps: if chain says collection minted N items and this
-  // wallet owns some, ensure every owned id has an assignment.
+  // Only randomly backfill tokens the indexer has not described yet.
   const missing = nfts
     .map((n) => n.tokenId)
     .filter((id) => !getAssignment(db, id));

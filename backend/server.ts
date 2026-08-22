@@ -25,14 +25,17 @@ import { proxyIpfsMedia } from "./mediaProxy";
 import {
   assignCardsForTokens,
   ensureAssignmentTables,
-  ensureMintedAssignments,
   getAssignment,
   resetAssignmentsIfCollectionChanged,
   seedCardInventory,
 } from "./assignments";
 import { TOTAL_SUPPLY } from "./cardCatalog";
 import { setRevealEnabled } from "./reveal";
-import { buildWalletHoldings, fetchWalletCollectionNfts } from "./ownership";
+import {
+  buildWalletHoldings,
+  fetchWalletCollectionNfts,
+  hydrateAssignmentsFromTonApi,
+} from "./ownership";
 import { buildShowcaseItems, loadMartyrBios } from "./showcase";
 
 // Keep the existing SQLite file for now (swap via store.ts later).
@@ -168,13 +171,19 @@ app.get("/nft/:id", async (req, res) => {
       });
     }
 
-    // Recover assignments if SQLite was wiped (Render ephemeral disk).
-    if (id < Number(state.nextItemIndex)) {
-      ensureMintedAssignments(db, Number(state.nextItemIndex));
+    // Restore wallet/indexer cards first. Do NOT randomly re-roll all minted ids.
+    try {
+      await hydrateAssignmentsFromTonApi(db);
+    } catch {
+      /* optional */
+    }
+    if (id < Number(state.nextItemIndex) && !getAssignment(db, id)) {
+      assignCardsForTokens(db, [id]);
     }
 
     const assigned = getAssignment(db, id);
     if (assigned) {
+      res.setHeader("Cache-Control", "public, max-age=60");
       return res.json({
         name: assigned.name,
         description: "Alamdar NFT Collection",

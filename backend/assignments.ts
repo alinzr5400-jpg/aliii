@@ -305,6 +305,67 @@ export function listAssignments(db: Db, limit = 24): CardAssignment[] {
 }
 
 /**
+ * Lock a token to a specific inventory card key (from TonAPI / first mint).
+ * Used after Render SQLite wipe so metadata matches what wallets already cached.
+ */
+export function upsertAssignmentFromCardKey(
+  db: Db,
+  tokenId: number,
+  cardKey: string
+): CardAssignment | null {
+  ensureAssignmentTables(db);
+  seedCardInventory(db);
+
+  const existing = getAssignment(db, tokenId);
+  if (existing?.cardKey === cardKey) return existing;
+
+  const exact = db
+    .prepare(
+      `SELECT card_key, name, rarity, image FROM card_inventory WHERE card_key = ?`
+    )
+    .get(cardKey) as InventoryRow | undefined;
+
+  const stem = stemFromCardKey(cardKey);
+  const row =
+    exact ||
+    (stem
+      ? (db
+          .prepare(
+            `SELECT card_key, name, rarity, image FROM card_inventory
+             WHERE assigned_token_id IS NULL AND card_key LIKE ?
+             LIMIT 1`
+          )
+          .get(`%:${stem}#%`) as InventoryRow | undefined)
+      : undefined);
+
+  if (!row) return existing;
+
+  const now = Math.floor(Date.now() / 1000);
+  db.prepare(
+    `UPDATE card_inventory SET assigned_token_id = NULL WHERE assigned_token_id = ?`
+  ).run(tokenId);
+  db.prepare(`DELETE FROM card_assignments WHERE token_id = ?`).run(tokenId);
+  db.prepare(
+    `UPDATE card_inventory SET assigned_token_id = NULL WHERE card_key = ?`
+  ).run(row.card_key);
+  db.prepare(
+    `UPDATE card_inventory SET assigned_token_id = ? WHERE card_key = ?`
+  ).run(tokenId, row.card_key);
+  db.prepare(
+    `INSERT INTO card_assignments(token_id, card_key, name, rarity, image, assigned_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(tokenId, row.card_key, row.name, row.rarity, row.image, now);
+
+  return {
+    tokenId,
+    cardKey: row.card_key,
+    name: row.name,
+    rarity: row.rarity,
+    image: row.image,
+  };
+}
+
+/**
  * Random reveal assignment for minted on-chain token ids.
  * Picks unused inventory slots without replacement.
  */

@@ -197,7 +197,7 @@ export async function buildWalletHoldings(
       return {
         tokenId: nft.tokenId,
         address: nft.address,
-        name: assigned?.name ?? `Alamdar #${nft.tokenId}`,
+        name: assigned?.name ?? `Alamdar #${nft.tokenId + 1}`,
         rarity: assigned?.rarity ?? null,
         cardKey: assigned?.cardKey ?? null,
         image: reveal ? assigned?.image ?? null : hiddenImage,

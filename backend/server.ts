@@ -190,7 +190,7 @@ app.get("/nft/:id", async (req, res) => {
         image: assigned.image,
         attributes: [
           { trait_type: "Rarity", value: assigned.rarity },
-          { trait_type: "Token ID", value: id },
+          { trait_type: "Token ID", value: id + 1 },
           { trait_type: "Card", value: assigned.cardKey },
         ],
       });
